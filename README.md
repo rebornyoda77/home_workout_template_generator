@@ -176,6 +176,20 @@ from your phone over the week, or from the terminal, and either sees what
 the other did. Set `--host 0.0.0.0` (behind something like Tailscale, not
 open to the internet) to reach it from another device.
 
+**Install it as an app** on your phone's home screen instead of using a
+browser tab/bookmark: on iOS, open it in Safari and use Share -> Add to
+Home Screen; on Android, open it in Chrome and use the menu's Install app
+(or "Add to Home screen") option -- Chrome may only offer this automatically
+over HTTPS, so plain `http://` over Tailscale/LAN might need the manual menu
+option instead of an install banner. Either way you get a standalone app
+icon (the same orange "W" as the browser tab) that opens straight into
+**Today's Workout**, no browser chrome or address bar. This is served by a
+`manifest.json` + a deliberately no-op service worker (it never caches
+anything -- every page here is behind the passcode gate and shows live
+data, so caching risks showing stale or, on a shared device, another
+session's page; the service worker exists purely to satisfy Chrome's
+installability check).
+
 ## Project layout
 
 ```
@@ -191,6 +205,7 @@ workout_generator/
   web_config.py    web passcode storage (data/web_config.json)
   web_server.py    Flask app (see web_main.py)
   templates/       Jinja2 templates for the web interface
+  static/          manifest.json, service worker, and app icons (PWA install)
 data/
   history.json      generated at runtime; tracks exercise-use history
   web_config.json    generated at runtime; hashed web passcode
