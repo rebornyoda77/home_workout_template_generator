@@ -35,6 +35,7 @@ def serialize_day(day: dict) -> dict:
                 "type": block["type"],
                 "title": block["title"],
                 "structure": block["structure"],
+                "timer": block["timer"],
                 "exercises": [{**asdict(e), "actual": "", "feel": ""} for e in block["exercises"]],
             }
             for block in day["blocks"]

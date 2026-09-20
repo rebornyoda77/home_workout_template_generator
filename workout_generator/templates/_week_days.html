@@ -14,6 +14,10 @@
     <div class="block">
       <h3>{{ block.title }}</h3>
       <p class="block-structure">{{ block.structure }}</p>
+      <button type="button" class="button start-timer-btn no-print"
+              data-timer='{{ block.timer | tojson }}'
+              data-exercises='{{ (block.exercises | map(attribute="name") | list) | tojson }}'
+              data-title="{{ block.title }}">Start Timer</button>
       <ul class="exercise-list">
         {% for exercise in block.exercises %}
         <li>

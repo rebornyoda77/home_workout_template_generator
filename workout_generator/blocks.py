@@ -5,11 +5,27 @@ Each block is returned as a plain dict so the formatter and tests don't need
 to know about internal classes:
 
     {
-        "type": "superset" | "buyout" | "drop_set" | "core_finisher",
+        "type": "superset" | "buyout" | "drop_set" | "core_finisher" | "bag_round",
         "title": str,
         "structure": str,           # human-readable timing/rep scheme
         "exercises": [Exercise, ...],
+        "timer": {...},             # machine-readable version of `structure`,
+                                     # for the web interval timer -- see below
     }
+
+`timer` shapes (all seconds are ints; `exercise_count` tells the client how
+many of the block's exercises to cycle through):
+    {"kind": "intervals", "rounds": N, "work_seconds": W, "rest_seconds": R, "exercise_count": E}
+        -- N rounds, each round working every exercise for W seconds with
+        an R-second rest after each (superset/core-finisher/most bag rounds).
+    {"kind": "amrap", "total_seconds": T, "segment_seconds": S, "exercise_count": E}
+        -- one continuous T-second block, alternating exercises every S
+        seconds, no rest (the "8-minute block, non-stop" superset variant).
+    {"kind": "continuous", "seconds": T, "exercise_count": E}
+        -- one uninterrupted T-second block (buy-outs, some bag rounds).
+    {"kind": "rounds_with_rest", "rounds": N, "rest_seconds": R, "rep_labels": [...]}
+        -- N self-paced (rep-based, not timed) rounds with an R-second
+        rest between them (drop sets).
 """
 
 import random
@@ -19,24 +35,36 @@ from .history import History
 
 
 SUPERSET_STRUCTURES = [
-    "4 rounds: 40s work / 20s rest per exercise",
-    "5 rounds: 30s work / 15s rest per exercise",
-    "3 rounds: 45s work / 15s rest per exercise",
-    "8-minute block, non-stop: alternate exercises every 40s",
+    ("4 rounds: 40s work / 20s rest per exercise",
+     {"kind": "intervals", "rounds": 4, "work_seconds": 40, "rest_seconds": 20}),
+    ("5 rounds: 30s work / 15s rest per exercise",
+     {"kind": "intervals", "rounds": 5, "work_seconds": 30, "rest_seconds": 15}),
+    ("3 rounds: 45s work / 15s rest per exercise",
+     {"kind": "intervals", "rounds": 3, "work_seconds": 45, "rest_seconds": 15}),
+    ("8-minute block, non-stop: alternate exercises every 40s",
+     {"kind": "amrap", "total_seconds": 480, "segment_seconds": 40}),
 ]
 
 CORE_FINISHER_STRUCTURES = [
-    "3 rounds: 30s work / 15s rest per exercise",
-    "2 rounds: 45s work / 15s rest per exercise",
+    ("3 rounds: 30s work / 15s rest per exercise",
+     {"kind": "intervals", "rounds": 3, "work_seconds": 30, "rest_seconds": 15}),
+    ("2 rounds: 45s work / 15s rest per exercise",
+     {"kind": "intervals", "rounds": 2, "work_seconds": 45, "rest_seconds": 15}),
 ]
 
 BUYOUT_DURATION = "2:00 continuous buy-out"
+BUYOUT_TIMER = {"kind": "continuous", "seconds": 120}
+
 DROP_SET_REPS = (10, 8, 6)
+DROP_SET_REST_SECONDS = 30
 
 BAG_ROUND_STRUCTURES = [
-    "3 rounds: 2:00 work / 30s rest -- throw combos non-stop",
-    "1 round: 3:00 continuous -- keep combos moving the whole round",
-    "4 rounds: 1:00 work / 20s rest -- high output, fast hands",
+    ("3 rounds: 2:00 work / 30s rest -- throw combos non-stop",
+     {"kind": "intervals", "rounds": 3, "work_seconds": 120, "rest_seconds": 30}),
+    ("1 round: 3:00 continuous -- keep combos moving the whole round",
+     {"kind": "continuous", "seconds": 180}),
+    ("4 rounds: 1:00 work / 20s rest -- high output, fast hands",
+     {"kind": "intervals", "rounds": 4, "work_seconds": 60, "rest_seconds": 20}),
 ]
 
 
@@ -90,10 +118,12 @@ def pick_exercise(pattern, history: History, used_this_week, rng: random.Random,
 
 def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset()):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
+    structure, timer = rng.choice(SUPERSET_STRUCTURES)
     return {
         "type": "superset",
         "title": title,
-        "structure": rng.choice(SUPERSET_STRUCTURES),
+        "structure": structure,
+        "timer": {**timer, "exercise_count": len(picked)},
         "exercises": picked,
     }
 
@@ -111,6 +141,7 @@ def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="B
         "type": "buyout",
         "title": title,
         "structure": BUYOUT_DURATION,
+        "timer": {**BUYOUT_TIMER, "exercise_count": len(picked)},
         "exercises": picked,
     }
 
@@ -122,25 +153,34 @@ def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="
         "type": "drop_set",
         "title": title,
         "structure": f"3 rounds, descending reps: {reps} (rest 30s between rounds)",
+        "timer": {
+            "kind": "rounds_with_rest", "rounds": len(DROP_SET_REPS),
+            "rest_seconds": DROP_SET_REST_SECONDS,
+            "rep_labels": [str(r) for r in DROP_SET_REPS],
+        },
         "exercises": picked,
     }
 
 
 def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset()):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
+    structure, timer = rng.choice(CORE_FINISHER_STRUCTURES)
     return {
         "type": "core_finisher",
         "title": title,
-        "structure": rng.choice(CORE_FINISHER_STRUCTURES),
+        "structure": structure,
+        "timer": {**timer, "exercise_count": len(picked)},
         "exercises": picked,
     }
 
 
 def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset()):
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
+    structure, timer = rng.choice(BAG_ROUND_STRUCTURES)
     return {
         "type": "bag_round",
         "title": title,
-        "structure": rng.choice(BAG_ROUND_STRUCTURES),
+        "structure": structure,
+        "timer": {**timer, "exercise_count": len(picked)},
         "exercises": picked,
     }

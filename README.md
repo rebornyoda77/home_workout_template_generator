@@ -144,6 +144,19 @@ than scrolling a full week. Any day-card also links into Focus Mode
 directly ("Open in Focus Mode"). Saving a log from there keeps you on that
 same day instead of bouncing to the full week view.
 
+Every block (superset, buy-out, drop set, core finisher, bag round) has a
+**Start Timer** button that opens an on-screen interval timer -- no phone
+switching to a separate stopwatch app mid-set. It reads the same structure
+the block already shows as text, so the countdown can never drift out of
+sync with what's printed: fixed work/rest rounds count down and auto-advance
+through each exercise, buy-outs run a single continuous countdown, AMRAP-style
+blocks auto-cycle exercises on a fixed interval, and drop sets show a
+self-paced "GO" step per round (tap "Done -- Start Rest" when you finish that
+set) followed by a timed rest. Short tones mark each transition and a longer
+tone marks the end of the block; Start/Pause and Skip controls sit under the
+countdown, and the timer works the same way on the full week view and in
+Focus Mode.
+
 The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what

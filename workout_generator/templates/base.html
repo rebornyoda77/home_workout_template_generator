@@ -79,6 +79,20 @@
   .today-exercise-list .exercise-load { font-size: 14px; }
   .today-log-form .log-actual, .today-log-form .log-feel { padding: 10px 12px; font-size: 14px; }
   .today-log-form .log-row { margin-top: 8px; }
+  .start-timer-btn { margin: 4px 0 10px; }
+  .timer-modal { display: none; position: fixed; inset: 0; background: rgba(16, 20, 26, .6); align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+  .timer-modal.open { display: flex; }
+  .timer-card { background: var(--surface); border-radius: var(--radius); padding: 30px 26px; max-width: 360px; width: 100%; text-align: center; box-shadow: 0 12px 40px rgba(0, 0, 0, .4); }
+  .timer-title { font-size: 12.5px; font-weight: 700; color: var(--text-muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .timer-round { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; }
+  .timer-phase { font-size: 21px; font-weight: 700; margin: 0 0 16px; min-height: 27px; }
+  .timer-time { font-size: 68px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 0 0 22px; letter-spacing: -.02em; color: var(--text); }
+  .timer-modal.timer-phase-rest .timer-time { color: var(--accent); }
+  .timer-controls { display: flex; gap: 10px; justify-content: center; }
+  .timer-controls .button { flex: 1 1 auto; padding: 15px; font-size: 15px; font-weight: 700; }
+  .timer-go-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .timer-go-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .timer-close-btn { margin-top: 18px; background: none; border: none; color: var(--text-muted); font-size: 13px; cursor: pointer; text-decoration: underline; padding: 4px; }
   .search-bar { margin: 4px 0 20px; }
   .search-bar input { font-size: 15px; }
   .glossary-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 24px; }
@@ -196,5 +210,250 @@
 {% block content %}{% endblock %}
 </div>
 </main>
+
+{% if session.get('authed') %}
+<div id="workout-timer-modal" class="timer-modal" aria-hidden="true">
+  <div class="timer-card">
+    <p class="timer-title" id="timer-title"></p>
+    <p class="timer-round" id="timer-round"></p>
+    <p class="timer-phase" id="timer-phase"></p>
+    <p class="timer-time" id="timer-time"></p>
+    <div class="timer-controls">
+      <button type="button" class="button" id="timer-toggle">Start</button>
+      <button type="button" class="button" id="timer-skip">Skip</button>
+    </div>
+    <button type="button" class="button timer-go-btn" id="timer-go-done" style="display: none; width: 100%; margin-top: 4px;">Done -- Start Rest</button>
+    <button type="button" class="timer-close-btn" id="timer-close">Close timer</button>
+  </div>
+</div>
+<script>
+(function () {
+  var modal, titleEl, phaseEl, timeEl, roundEl, toggleBtn, skipBtn, closeBtn, goBtn;
+  var segments = [];
+  var segIndex = 0;
+  var remainingMs = 0;
+  var running = false;
+  var rafId = null;
+  var lastTick = null;
+  var audioCtx = null;
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) { try { audioCtx = new Ctx(); } catch (e) { audioCtx = null; } }
+    }
+    return audioCtx;
+  }
+
+  function beep(freq, durationMs, delayMs) {
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    setTimeout(function () {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + durationMs / 1000);
+    }, delayMs || 0);
+  }
+
+  function cueTransition() {
+    beep(880, 140, 0);
+    beep(880, 140, 220);
+    beep(880, 140, 440);
+  }
+
+  function cueComplete() {
+    beep(660, 500, 0);
+  }
+
+  function buildSegments(timer, exerciseNames, title) {
+    var names = exerciseNames.length ? exerciseNames : [title];
+    var segs = [];
+    if (timer.kind === 'intervals') {
+      for (var r = 1; r <= timer.rounds; r++) {
+        for (var i = 0; i < timer.exercise_count; i++) {
+          segs.push({ label: names[i % names.length], sub: 'Round ' + r + ' of ' + timer.rounds, kind: 'work', seconds: timer.work_seconds });
+          var isLast = (r === timer.rounds && i === timer.exercise_count - 1);
+          if (timer.rest_seconds > 0 && !isLast) {
+            segs.push({ label: 'Rest', sub: 'Round ' + r + ' of ' + timer.rounds, kind: 'rest', seconds: timer.rest_seconds });
+          }
+        }
+      }
+    } else if (timer.kind === 'amrap') {
+      var count = Math.max(1, Math.round(timer.total_seconds / timer.segment_seconds));
+      for (var j = 0; j < count; j++) {
+        segs.push({ label: names[j % names.length], sub: 'Segment ' + (j + 1) + ' of ' + count, kind: 'work', seconds: timer.segment_seconds });
+      }
+    } else if (timer.kind === 'continuous') {
+      segs.push({ label: names.join(' / '), sub: 'Continuous', kind: 'work', seconds: timer.seconds });
+    } else if (timer.kind === 'rounds_with_rest') {
+      for (var k = 0; k < timer.rounds; k++) {
+        segs.push({
+          label: names[0] + ' — ' + timer.rep_labels[k] + ' reps',
+          sub: 'Round ' + (k + 1) + ' of ' + timer.rounds,
+          kind: 'go', seconds: null
+        });
+        if (k < timer.rounds - 1) {
+          segs.push({ label: 'Rest', sub: 'Round ' + (k + 1) + ' of ' + timer.rounds, kind: 'rest', seconds: timer.rest_seconds });
+        }
+      }
+    }
+    return segs;
+  }
+
+  function formatTime(ms) {
+    var totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function renderIdle() {
+    var seg = segments[segIndex];
+    phaseEl.textContent = seg.label;
+    roundEl.textContent = seg.sub || '';
+    modal.className = 'timer-modal open timer-phase-' + seg.kind;
+    if (seg.kind === 'go') {
+      timeEl.textContent = 'GO';
+      toggleBtn.style.display = 'none';
+      skipBtn.style.display = 'none';
+      goBtn.style.display = '';
+    } else {
+      timeEl.textContent = formatTime(remainingMs);
+      toggleBtn.style.display = '';
+      skipBtn.style.display = '';
+      goBtn.style.display = 'none';
+    }
+  }
+
+  function renderDone() {
+    modal.className = 'timer-modal open timer-phase-done';
+    phaseEl.textContent = 'Block complete!';
+    roundEl.textContent = '';
+    timeEl.textContent = '✓';
+    toggleBtn.style.display = 'none';
+    skipBtn.style.display = 'none';
+    goBtn.style.display = 'none';
+  }
+
+  function startSegmentTimer() {
+    var seg = segments[segIndex];
+    if (!seg || seg.kind === 'go') { renderIdle(); return; }
+    remainingMs = seg.seconds * 1000;
+    renderIdle();
+  }
+
+  function tick(ts) {
+    if (!running) return;
+    if (lastTick == null) lastTick = ts;
+    var delta = ts - lastTick;
+    lastTick = ts;
+    remainingMs -= delta;
+    if (remainingMs <= 0) {
+      advance();
+      return;
+    }
+    timeEl.textContent = formatTime(remainingMs);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function advance() {
+    if (rafId) cancelAnimationFrame(rafId);
+    segIndex++;
+    lastTick = null;
+    if (segIndex >= segments.length) {
+      running = false;
+      cueComplete();
+      renderDone();
+      return;
+    }
+    cueTransition();
+    startSegmentTimer();
+    if (segments[segIndex].kind !== 'go') {
+      running = true;
+      rafId = requestAnimationFrame(tick);
+    } else {
+      running = false;
+    }
+  }
+
+  function toggleRun() {
+    var seg = segments[segIndex];
+    if (!seg || seg.kind === 'go') return;
+    ensureAudio();
+    running = !running;
+    toggleBtn.textContent = running ? 'Pause' : 'Resume';
+    if (running) {
+      lastTick = null;
+      rafId = requestAnimationFrame(tick);
+    } else if (rafId) {
+      cancelAnimationFrame(rafId);
+    }
+  }
+
+  window.openWorkoutTimer = function (timerJson, exerciseNamesJson, title) {
+    if (!modal) return;
+    var timer = JSON.parse(timerJson);
+    var names = JSON.parse(exerciseNamesJson);
+    segments = buildSegments(timer, names, title);
+    segIndex = 0;
+    running = false;
+    lastTick = null;
+    if (rafId) cancelAnimationFrame(rafId);
+    titleEl.textContent = title;
+    toggleBtn.textContent = 'Start';
+    startSegmentTimer();
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+  };
+
+  function closeTimer() {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    modal = document.getElementById('workout-timer-modal');
+    if (!modal) return;
+    titleEl = document.getElementById('timer-title');
+    phaseEl = document.getElementById('timer-phase');
+    timeEl = document.getElementById('timer-time');
+    roundEl = document.getElementById('timer-round');
+    toggleBtn = document.getElementById('timer-toggle');
+    skipBtn = document.getElementById('timer-skip');
+    closeBtn = document.getElementById('timer-close');
+    goBtn = document.getElementById('timer-go-done');
+
+    toggleBtn.addEventListener('click', function () {
+      if (toggleBtn.textContent === 'Start') {
+        ensureAudio();
+        running = true;
+        toggleBtn.textContent = 'Pause';
+        lastTick = null;
+        rafId = requestAnimationFrame(tick);
+      } else {
+        toggleRun();
+      }
+    });
+    skipBtn.addEventListener('click', function () { advance(); });
+    goBtn.addEventListener('click', function () { advance(); });
+    closeBtn.addEventListener('click', closeTimer);
+
+    document.querySelectorAll('.start-timer-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        window.openWorkoutTimer(btn.getAttribute('data-timer'), btn.getAttribute('data-exercises'), btn.getAttribute('data-title'));
+      });
+    });
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>

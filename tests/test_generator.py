@@ -383,6 +383,81 @@ class BlockSelectionTests(unittest.TestCase):
             self.assertEqual(block["exercises"][0].pattern, ex_pool.CARDIO)
 
 
+class TimerSpecTests(unittest.TestCase):
+    """Every block builder must attach a machine-readable `timer` spec
+    alongside its human-readable `structure` text, for the web interval
+    timer. These checks make sure the two never drift out of sync and that
+    every timer kind has the fields the client-side player expects."""
+
+    def _history_and_rng(self, seed):
+        history = History()
+        history.begin_week()
+        return history, random.Random(seed)
+
+    def _assert_valid_timer(self, timer, exercise_count):
+        self.assertIn(timer["kind"], ("intervals", "amrap", "continuous", "rounds_with_rest"))
+        if timer["kind"] == "intervals":
+            self.assertGreater(timer["rounds"], 0)
+            self.assertGreater(timer["work_seconds"], 0)
+            self.assertGreaterEqual(timer["rest_seconds"], 0)
+            self.assertEqual(timer["exercise_count"], exercise_count)
+        elif timer["kind"] == "amrap":
+            self.assertGreater(timer["total_seconds"], 0)
+            self.assertGreater(timer["segment_seconds"], 0)
+            self.assertEqual(timer["exercise_count"], exercise_count)
+        elif timer["kind"] == "continuous":
+            self.assertGreater(timer["seconds"], 0)
+            self.assertEqual(timer["exercise_count"], exercise_count)
+        elif timer["kind"] == "rounds_with_rest":
+            self.assertGreater(timer["rounds"], 0)
+            self.assertGreaterEqual(timer["rest_seconds"], 0)
+            self.assertEqual(len(timer["rep_labels"]), timer["rounds"])
+
+    def test_superset_timer_matches_exercise_count_across_many_rolls(self):
+        history, rng = self._history_and_rng(1)
+        for _ in range(30):
+            block = blocks.build_superset(
+                (ex_pool.SQUAT, ex_pool.PUSH_H), history, used_this_week=set(), rng=rng,
+            )
+            self._assert_valid_timer(block["timer"], exercise_count=2)
+
+    def test_buyout_timer_is_continuous_two_minutes(self):
+        history, rng = self._history_and_rng(2)
+        block = blocks.build_buyout(ex_pool.CARDIO, history, used_this_week=set(), rng=rng)
+        self.assertEqual(block["timer"], {"kind": "continuous", "seconds": 120, "exercise_count": 1})
+
+    def test_drop_set_timer_is_rounds_with_rest_and_matches_reps(self):
+        history, rng = self._history_and_rng(3)
+        block = blocks.build_drop_set(ex_pool.ARMS, history, used_this_week=set(), rng=rng)
+        self._assert_valid_timer(block["timer"], exercise_count=1)
+        self.assertEqual(block["timer"]["kind"], "rounds_with_rest")
+        self.assertEqual(block["timer"]["rep_labels"], ["10", "8", "6"])
+
+    def test_core_finisher_timer_across_many_rolls(self):
+        history, rng = self._history_and_rng(4)
+        for _ in range(30):
+            block = blocks.build_core_finisher(
+                (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI), history, used_this_week=set(), rng=rng,
+            )
+            self._assert_valid_timer(block["timer"], exercise_count=2)
+            self.assertEqual(block["timer"]["kind"], "intervals")
+
+    def test_bag_round_timer_across_many_rolls(self):
+        history, rng = self._history_and_rng(5)
+        for _ in range(30):
+            block = blocks.build_bag_round(ex_pool.BAG, history, used_this_week=set(), rng=rng)
+            self._assert_valid_timer(block["timer"], exercise_count=1)
+
+    def test_every_week_block_has_a_timer_after_serialization(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(9), generated_at="2026-09-20")
+        stored = history.week_by_index(week["week_index"])
+        for day in stored["days"]:
+            for block in day["blocks"]:
+                self.assertIn("timer", block)
+                self.assertIn("kind", block["timer"])
+
+
 class WeekBuilderTests(unittest.TestCase):
     def test_four_day_week_structure(self):
         history = History()
