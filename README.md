@@ -94,8 +94,9 @@ Pages: **Dashboard** (generate a new week, shows the latest one, with
 Regenerate/Delete buttons), **History** (every past week, with a View link
 and a Delete button per row, and a link into each week's own page which also
 has Regenerate/Delete), and **Glossary** (every exercise in the pool, grouped
-by movement pattern, with a short how-to, equipment, and load hint for each).
-The generator pages share the same `data/history.json` as the CLI, so weeks
+by movement pattern, with a short how-to, equipment, and load hint for each,
+plus a live search box that filters by name/equipment/description as you
+type). The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what
 the other did. Set `--host 0.0.0.0` (behind something like Tailscale, not

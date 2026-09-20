@@ -169,6 +169,14 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"Boxing Bag", response.data)
         self.assertIn(b"Goblet Squat", response.data)
         self.assertIn(b"Jab-Cross Combo", response.data)
+
+    def test_glossary_has_a_search_box_with_searchable_items(self):
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertIn(b'id="glossary-search"', response.data)
+        # every item must carry a data-search attribute with its own name in it,
+        # so the client-side filter has something to match against
+        self.assertIn(b'data-search="goblet squat', response.data.lower())
         self.assertIn(b"Hike a kettlebell back between the legs", response.data)
 
 

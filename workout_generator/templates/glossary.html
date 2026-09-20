@@ -6,9 +6,13 @@
   hand: kettlebells (5/10/15 lb), dumbbells (5-30 lb), resistance bands, adjustable bench, treadmill, boxing
   bag, yoga mats.</p>
 
-<nav class="glossary-toc">
+<div class="search-bar">
+  <input type="search" id="glossary-search" placeholder="Search exercises by name, equipment, or description…" autocomplete="off">
+</div>
+
+<nav class="glossary-toc" id="glossary-toc">
   {% for group in groups %}
-  <a href="#{{ group.key }}">{{ group.label }}</a>
+  <a href="#{{ group.key }}" data-toc-for="{{ group.key }}">{{ group.label }}</a>
   {% endfor %}
 </nav>
 
@@ -16,7 +20,8 @@
 <div class="glossary-group" id="{{ group.key }}">
   <h2>{{ group.label }}</h2>
   {% for exercise in group.exercises %}
-  <div class="glossary-item">
+  <div class="glossary-item"
+       data-search="{{ (exercise.name ~ ' ' ~ exercise.description ~ ' ' ~ (exercise.equipment | join(' ')) ~ ' ' ~ group.label ~ ' ' ~ exercise.note) | lower }}">
     <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
     {% if exercise.description %}<p class="glossary-description">{{ exercise.description }}</p>{% endif %}
     <p class="glossary-meta">
@@ -28,4 +33,42 @@
   {% endfor %}
 </div>
 {% endfor %}
+
+<p id="glossary-empty" class="empty" style="display: none;">No exercises match your search.</p>
+
+<script>
+(function () {
+  var input = document.getElementById('glossary-search');
+  var groups = document.querySelectorAll('.glossary-group');
+  var tocLinks = document.querySelectorAll('#glossary-toc a');
+  var empty = document.getElementById('glossary-empty');
+
+  function filter() {
+    var query = input.value.trim().toLowerCase();
+    var anyVisible = false;
+    var groupHasMatch = {};
+
+    groups.forEach(function (group) {
+      var items = group.querySelectorAll('.glossary-item');
+      var hasMatch = false;
+      items.forEach(function (item) {
+        var match = !query || item.dataset.search.indexOf(query) !== -1;
+        item.style.display = match ? '' : 'none';
+        if (match) hasMatch = true;
+      });
+      group.style.display = hasMatch ? '' : 'none';
+      groupHasMatch[group.id] = hasMatch;
+      if (hasMatch) anyVisible = true;
+    });
+
+    tocLinks.forEach(function (link) {
+      link.style.display = groupHasMatch[link.dataset.tocFor] ? '' : 'none';
+    });
+
+    empty.style.display = anyVisible ? 'none' : '';
+  }
+
+  input.addEventListener('input', filter);
+})();
+</script>
 {% endblock %}
