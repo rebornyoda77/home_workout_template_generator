@@ -1,7 +1,9 @@
+import io
 import json
 import random
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool
@@ -142,6 +144,43 @@ class BlockSelectionTests(unittest.TestCase):
         ]
         self.assertEqual(len({p.name for p in picks}), pool_size)
 
+    def test_pick_exercise_avoids_excluded_names_when_alternatives_exist(self):
+        history = History()
+        history.begin_week()
+        pool_names = [e.name for e in ex_pool.by_pattern(ex_pool.ARMS)]
+        excluded = frozenset(pool_names[:-1])  # exclude every arm exercise but one
+
+        rng = random.Random(4)
+        for _ in range(10):
+            choice = blocks.pick_exercise(
+                ex_pool.ARMS, history, used_this_week=set(), rng=rng, excluded_names=excluded,
+            )
+            self.assertEqual(choice.name, pool_names[-1])
+
+    def test_pick_exercise_falls_back_to_excluded_pool_rather_than_crash(self):
+        history = History()
+        history.begin_week()
+        pool_names = [e.name for e in ex_pool.by_pattern(ex_pool.GLUTES)]
+        excluded = frozenset(pool_names)  # exclude every exercise in the pattern
+
+        choice = blocks.pick_exercise(
+            ex_pool.GLUTES, history, used_this_week=set(), rng=random.Random(5), excluded_names=excluded,
+        )
+        self.assertIn(choice.name, pool_names)  # had no choice but to include one
+
+    def test_build_buyout_steers_away_from_a_fully_excluded_pattern_when_an_alternative_exists(self):
+        history = History()
+        history.begin_week()
+        excluded = frozenset(e.name for e in ex_pool.by_pattern(ex_pool.POWER))
+
+        rng = random.Random(6)
+        for _ in range(10):
+            block = blocks.build_buyout(
+                (ex_pool.POWER, ex_pool.CARDIO), history, used_this_week=set(), rng=rng,
+                excluded_names=excluded,
+            )
+            self.assertEqual(block["exercises"][0].pattern, ex_pool.CARDIO)
+
 
 class WeekBuilderTests(unittest.TestCase):
     def test_four_day_week_structure(self):
@@ -245,6 +284,17 @@ class WeekBuilderTests(unittest.TestCase):
         self.assertEqual(len(regenerated["days"]), 3)
         self.assertEqual(len(history.week_by_index(1)["days"]), 3)
 
+    def test_build_week_honors_excluded_names_where_a_substitute_exists(self):
+        history = History()
+        # Exclude only 2 of ARMS' 5 exercises -- 3 candidates comfortably
+        # cover the pattern's 2 uses across the week (one per day template
+        # that has an ARMS drop set) without ever forcing a reuse.
+        excluded = frozenset(e.name for e in ex_pool.by_pattern(ex_pool.ARMS)[:2])
+        week = build_week(4, history, rng=random.Random(8), generated_at="2026-09-20", excluded_names=excluded)
+
+        used = {e.name for day in week["days"] for block in day["blocks"] for e in block["exercises"]}
+        self.assertFalse(used & excluded)
+
 
 class GenerateModuleTests(unittest.TestCase):
     def test_delete_week_removes_history_entry_and_output_file(self):
@@ -299,6 +349,39 @@ class GenerateModuleTests(unittest.TestCase):
             history_path = Path(tmp_dir) / "history.json"
             result = generate_module.regenerate_week(999, history_path=history_path)
             self.assertIsNone(result)
+
+    def test_resolve_excluded_names_expands_patterns_and_merges_exercises(self):
+        names = generate_module.resolve_excluded_names(
+            excluded_exercises=["Goblet Squat"], excluded_patterns=[ex_pool.CALVES],
+        )
+        self.assertIn("Goblet Squat", names)
+        self.assertIn("Lunge-to-Calf-Raise Combo", names)  # CALVES pattern's only exercise
+
+    def test_resolve_excluded_names_handles_no_exclusions(self):
+        self.assertEqual(generate_module.resolve_excluded_names(), frozenset())
+
+    def test_find_exclusion_violations_empty_when_fully_honored(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            excluded = generate_module.resolve_excluded_names(excluded_exercises=["Goblet Squat"])
+            week, _markdown, _out = generate_module.generate_week(
+                4, history_path=history_path, seed=10, excluded_exercises=["Goblet Squat"],
+            )
+            self.assertEqual(generate_module.find_exclusion_violations(week, excluded), [])
+
+    def test_find_exclusion_violations_flags_unavoidable_pattern_exclusion(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            # Horizontal Push is mandatory (no substitute) in Block A/B of
+            # several day templates -- excluding it entirely can't always be honored.
+            excluded = generate_module.resolve_excluded_names(excluded_patterns=[ex_pool.PUSH_H])
+            week, _markdown, _out = generate_module.generate_week(
+                4, history_path=history_path, seed=3, excluded_patterns=[ex_pool.PUSH_H],
+            )
+            violations = generate_module.find_exclusion_violations(week, excluded)
+            self.assertTrue(violations)
+            for name in violations:
+                self.assertIn(name, excluded)
 
 
 class CliTests(unittest.TestCase):
@@ -393,6 +476,44 @@ class CliTests(unittest.TestCase):
 
             rc = cli_main(["regenerate", "--week", "999", *common])
             self.assertEqual(rc, 1)
+
+    def test_generate_exclude_flags_keep_excluded_names_out_of_output(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main([
+                    "generate", "--days", "4", "--seed", "15",
+                    "--exclude-exercise", "Goblet Squat", "--exclude-exercise", "Two-Hand Dumbbell Squat",
+                    "--history-file", str(history_path), "--output-dir", str(output_dir),
+                ])
+            self.assertEqual(rc, 0)
+            self.assertNotIn("Goblet Squat", stdout.getvalue())
+            self.assertNotIn("Two-Hand Dumbbell Squat", stdout.getvalue())
+
+    def test_generate_warns_on_stderr_when_exclusion_cannot_be_fully_honored(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            stderr = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                cli_main([
+                    "generate", "--days", "4", "--seed", "3",
+                    "--exclude-pattern", "push_horizontal",
+                    "--history-file", str(history_path), "--output-dir", str(output_dir),
+                ])
+            self.assertIn("couldn't fully honor", stderr.getvalue().lower())
+
+    def test_exclude_flags_reject_unknown_values(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                cli_main(["generate", "--exclude-exercise", "Not A Real Exercise"])
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                cli_main(["generate", "--exclude-pattern", "not_a_real_pattern"])
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@
   </div>
   <label for="avoid_weeks">Avoid repeats used within the last N weeks</label>
   <input type="number" id="avoid_weeks" name="avoid_weeks" value="2" min="0" max="10">
+  {% include "_exclude_patterns_field.html" %}
   <button type="submit" class="save-button">Generate Next Week</button>
 </form>
 </div>
@@ -27,6 +28,7 @@
         onsubmit="return confirm('Regenerate Week {{ latest_week.week_index }}? This replaces its exercises with a fresh set.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="days" value="{{ latest_week.days | length }}">
+    {% include "_exclude_patterns_field.html" %}
     <button type="submit" class="button">Regenerate This Week</button>
   </form>
   <form method="post" action="{{ url_for('delete_week_route', week_index=latest_week.week_index) }}" class="inline-form"

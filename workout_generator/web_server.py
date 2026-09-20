@@ -13,7 +13,10 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 
 from . import exercises as ex_pool
 from . import web_config
-from .generate import DEFAULT_OUTPUT_DIR, delete_week, generate_week, regenerate_week
+from .generate import (
+    DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
+    regenerate_week, resolve_excluded_names,
+)
 from .history import DEFAULT_HISTORY_PATH, History
 
 DEFAULT_PORT = 5050
@@ -29,6 +32,26 @@ def _check_csrf(form) -> bool:
     token = session.get("csrf_token")
     submitted = form.get("csrf_token")
     return bool(token) and bool(submitted) and secrets.compare_digest(token, submitted)
+
+
+def _pattern_options():
+    return [{"key": p, "label": ex_pool.PATTERN_LABELS[p]} for p in ex_pool.ALL_PATTERNS]
+
+
+def _parse_exclude_patterns(form) -> list:
+    return [p for p in form.getlist("exclude_patterns") if p in ex_pool.ALL_PATTERNS]
+
+
+def _flash_exclusion_violations(week: dict, excluded_patterns: list) -> None:
+    if not excluded_patterns:
+        return
+    excluded_names = resolve_excluded_names(excluded_patterns=excluded_patterns)
+    violations = find_exclusion_violations(week, excluded_names)
+    if violations:
+        flash(
+            "Couldn't fully honor your exclusions -- some blocks have no substitute exercise: "
+            + ", ".join(violations)
+        )
 
 
 def create_app(
@@ -79,7 +102,7 @@ def create_app(
         latest_week = history.weeks[-1] if history.weeks else None
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
-            csrf_token=_new_csrf_token(),
+            pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
         )
 
     @app.route("/generate", methods=["POST"])
@@ -100,13 +123,17 @@ def create_app(
             avoid_weeks = 2
         avoid_weeks = max(0, avoid_weeks)
 
+        excluded_patterns = _parse_exclude_patterns(request.form)
+
         week, _markdown, _out_path = generate_week(
             days,
             history_path=app.config["HISTORY_PATH"],
             output_dir=app.config["OUTPUT_DIR"],
             avoid_weeks=avoid_weeks,
+            excluded_patterns=excluded_patterns,
         )
         flash(f"Generated Week {week['week_index']}.")
+        _flash_exclusion_violations(week, excluded_patterns)
         return redirect(url_for("view_week", week_index=week["week_index"]))
 
     @app.route("/week/<int:week_index>")
@@ -116,7 +143,8 @@ def create_app(
         if entry is None:
             return "That week hasn't been generated.", 404
         return render_template(
-            "week.html", active_page="weeks", week=entry, csrf_token=_new_csrf_token(),
+            "week.html", active_page="weeks", week=entry,
+            pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
         )
 
     @app.route("/week/<int:week_index>/delete", methods=["POST"])
@@ -156,18 +184,23 @@ def create_app(
             avoid_weeks = 2
         avoid_weeks = max(0, avoid_weeks)
 
+        excluded_patterns = _parse_exclude_patterns(request.form)
+
         result = regenerate_week(
             week_index,
             history_path=app.config["HISTORY_PATH"],
             output_dir=app.config["OUTPUT_DIR"],
             num_days=days,
             avoid_weeks=avoid_weeks,
+            excluded_patterns=excluded_patterns,
         )
         if result is None:
             flash(f"Week {week_index} doesn't exist.")
             return redirect(url_for("history_page"))
 
+        week, _markdown, _out_path = result
         flash(f"Regenerated Week {week_index}.")
+        _flash_exclusion_violations(week, excluded_patterns)
         return redirect(url_for("view_week", week_index=week_index))
 
     @app.route("/history")

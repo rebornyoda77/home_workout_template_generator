@@ -34,6 +34,11 @@ python main.py list                     # list every generated week
 python main.py delete --week 3          # delete week 3
 python main.py regenerate --week 3      # reroll week 3's exercises, same slot/day count
 python main.py regenerate --week 3 --days 4   # ...and change its day count too
+
+# bench specific exercises or a whole movement pattern for this week (e.g. a sore shoulder):
+python main.py generate --exclude-exercise "Shoulder Press Half-Kneeling"
+python main.py generate --exclude-pattern push_vertical
+python main.py regenerate --week 3 --exclude-pattern push_vertical --exclude-pattern pull_vertical
 ```
 
 Each `generate`/`regenerate` run:
@@ -52,6 +57,14 @@ page doesn't move) but discards its old exercises before rerolling, so they
 don't count against the new pick's freshness. `delete` removes a week
 entirely and recomputes exercise-use stats from what's left, so a deleted
 week's exercises are free to reappear sooner than they otherwise would have.
+
+`--exclude-exercise`/`--exclude-pattern` are repeatable and available on both
+`generate` and `regenerate`, in the web UI as a checkbox list under "Exclude
+movement patterns" on the generate/regenerate forms. Some blocks need one
+exercise from a specific pattern with no substitute in that slot (e.g. Block
+A always needs a Squat and a Horizontal Push pick) — if excluding a whole
+pattern can't be fully honored for that reason, you'll get a warning listing
+which exercises had to be included anyway, rather than a silent no-op.
 
 ## Day structure
 
@@ -96,9 +109,12 @@ link and a Delete button per row, and a link into each week's own page which
 also has Regenerate/Delete/Print), and **Glossary** (every exercise in the
 pool, grouped by movement pattern, with a short how-to, equipment, and load
 hint for each, plus a live search box that filters by name/equipment/
-description as you type). Print uses the browser's own print dialog (Print
-This Week -> Ctrl/Cmd+P): a print stylesheet hides the nav, buttons, and
-generate form so only that week's days and blocks end up on paper. The
+description as you type, and how often/recently each has been used). Print
+uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
+stylesheet hides the nav, buttons, and generate form so only that week's
+days and blocks end up on paper. The generate and regenerate forms have a
+collapsible "Exclude movement patterns" checkbox list for benching a
+pattern for the week (see `--exclude-pattern` above). The
 generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what

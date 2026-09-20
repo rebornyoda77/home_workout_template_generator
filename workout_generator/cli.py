@@ -2,7 +2,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from .generate import DEFAULT_OUTPUT_DIR, delete_week, generate_week, regenerate_week
+from . import exercises as ex_pool
+from .generate import (
+    DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
+    regenerate_week, resolve_excluded_names,
+)
 from .history import DEFAULT_HISTORY_PATH, History
 
 COMMANDS = ("generate", "list", "delete", "regenerate")
@@ -16,6 +20,21 @@ def _common_paths(parser):
     parser.add_argument(
         "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
         help=f"Directory holding generated Markdown files (default: {DEFAULT_OUTPUT_DIR}).",
+    )
+
+
+def _exclusion_args(parser):
+    parser.add_argument(
+        "--exclude-exercise", action="append", default=[], metavar="NAME",
+        choices=sorted(e.name for e in ex_pool.EXERCISES),
+        help="Exclude a specific exercise from this week (repeatable). E.g. sore shoulder -> "
+             '--exclude-exercise "Shoulder Press Half-Kneeling".',
+    )
+    parser.add_argument(
+        "--exclude-pattern", action="append", default=[], metavar="PATTERN",
+        choices=ex_pool.ALL_PATTERNS,
+        help="Exclude a whole movement pattern from this week (repeatable). Choices: "
+             + ", ".join(ex_pool.ALL_PATTERNS),
     )
 
 
@@ -42,6 +61,7 @@ def build_arg_parser():
         "--dry-run", action="store_true",
         help="Print the plan without saving history or writing a file.",
     )
+    _exclusion_args(generate_parser)
     _common_paths(generate_parser)
 
     list_parser = sub.add_parser("list", help="List every generated week.")
@@ -69,6 +89,7 @@ def build_arg_parser():
         "--dry-run", action="store_true",
         help="Print the plan without saving history or writing a file.",
     )
+    _exclusion_args(regenerate_parser)
     _common_paths(regenerate_parser)
 
     return parser
@@ -90,12 +111,26 @@ def _cmd_generate(args) -> int:
         avoid_weeks=args.avoid_weeks,
         seed=args.seed,
         save=not args.dry_run,
+        excluded_exercises=args.exclude_exercise,
+        excluded_patterns=args.exclude_pattern,
     )
     print(markdown)
+    _warn_exclusion_violations(args, week)
     if out_path is not None:
         print(f"Saved to {out_path}", file=sys.stderr)
         print(f"History updated at {args.history_file}", file=sys.stderr)
     return 0
+
+
+def _warn_exclusion_violations(args, week: dict) -> None:
+    excluded_names = resolve_excluded_names(args.exclude_exercise, args.exclude_pattern)
+    violations = find_exclusion_violations(week, excluded_names)
+    if violations:
+        print(
+            "Warning: couldn't fully honor your exclusions -- some blocks have no "
+            f"substitute exercise: {', '.join(violations)}",
+            file=sys.stderr,
+        )
 
 
 def _cmd_list(args) -> int:
@@ -127,6 +162,8 @@ def _cmd_regenerate(args) -> int:
         avoid_weeks=args.avoid_weeks,
         seed=args.seed,
         save=not args.dry_run,
+        excluded_exercises=args.exclude_exercise,
+        excluded_patterns=args.exclude_pattern,
     )
     if result is None:
         print(f"Week {args.week} doesn't exist -- nothing to regenerate.", file=sys.stderr)
@@ -134,6 +171,7 @@ def _cmd_regenerate(args) -> int:
 
     week, markdown, out_path = result
     print(markdown)
+    _warn_exclusion_violations(args, week)
     if out_path is not None:
         print(f"Saved to {out_path}", file=sys.stderr)
         print(f"History updated at {args.history_file}", file=sys.stderr)

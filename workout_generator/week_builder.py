@@ -42,7 +42,10 @@ def _validate_num_days(num_days: int) -> None:
         raise ValueError("Weekly plans support 3-4 workout days")
 
 
-def _build_days(num_days: int, slot_index: int, history: History, rng: random.Random, avoid_weeks: int):
+def _build_days(
+    num_days: int, slot_index: int, history: History, rng: random.Random, avoid_weeks: int,
+    excluded_names=frozenset(),
+):
     """Builds one week's worth of days. `slot_index` only decides which day
     templates to start rotating from (so a given slot always leans toward
     the same day-template flavor); it does not affect exercise freshness
@@ -54,7 +57,7 @@ def _build_days(num_days: int, slot_index: int, history: History, rng: random.Ra
     used_this_week = set()
     days = []
     for template in templates:
-        day = build_day(template, history, used_this_week, rng, avoid_weeks)
+        day = build_day(template, history, used_this_week, rng, avoid_weeks, excluded_names)
         history.record_day(day["title"], exercise_names(day))
         days.append(day)
     return days
@@ -66,13 +69,14 @@ def build_week(
     rng: random.Random = None,
     avoid_weeks: int = 2,
     generated_at: str = None,
+    excluded_names=frozenset(),
 ):
     _validate_num_days(num_days)
     rng = rng or random.Random()
     generated_at = generated_at or date.today().isoformat()
 
     week_index = history.begin_week()
-    days = _build_days(num_days, week_index, history, rng, avoid_weeks)
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names)
     history.record_week(generated_at, [serialize_day(d) for d in days])
 
     return {
@@ -89,6 +93,7 @@ def regenerate_week(
     rng: random.Random = None,
     avoid_weeks: int = 2,
     generated_at: str = None,
+    excluded_names=frozenset(),
 ):
     """Rerolls a specific week's content in place, keeping its week_index
     (so its slot in history/the web UI doesn't move). Any existing entry
@@ -106,7 +111,7 @@ def regenerate_week(
     # the highest index and got wiped out by delete_week above.
     history.week_index = max(history.week_index, week_index)
 
-    days = _build_days(num_days, week_index, history, rng, avoid_weeks)
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names)
     history.record_week(generated_at, [serialize_day(d) for d in days], week_index=week_index)
 
     return {

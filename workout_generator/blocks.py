@@ -40,24 +40,31 @@ BAG_ROUND_STRUCTURES = [
 ]
 
 
-def _candidates(pattern, history: History, used_this_week, avoid_weeks):
+def _candidates(pattern, history: History, used_this_week, avoid_weeks, excluded_names=frozenset()):
     pool = ex_pool.by_pattern(pattern)
     if not pool:
         raise ValueError(f"No exercises registered for pattern '{pattern}'")
 
-    def available(fresh_only):
+    def available(fresh_only, respect_exclusions):
         out = []
         for exercise in pool:
             if exercise.name in used_this_week:
+                continue
+            if respect_exclusions and exercise.name in excluded_names:
                 continue
             if fresh_only and history.used_within(exercise.name, avoid_weeks):
                 continue
             out.append(exercise)
         return out
 
-    candidates = available(fresh_only=True)
+    candidates = available(fresh_only=True, respect_exclusions=True)
     if not candidates:
-        candidates = available(fresh_only=False)
+        candidates = available(fresh_only=False, respect_exclusions=True)
+    if not candidates:
+        # Every non-excluded exercise for this pattern is already used this
+        # week, or the whole pattern got excluded -- ignoring the exclusion
+        # beats being unable to build the plan at all.
+        candidates = available(fresh_only=False, respect_exclusions=False)
     if not candidates:
         # Every exercise for this pattern is already used this week (small
         # pool, big week) -- fall back to the full pattern pool so the
@@ -66,9 +73,10 @@ def _candidates(pattern, history: History, used_this_week, avoid_weeks):
     return candidates
 
 
-def pick_exercise(pattern, history: History, used_this_week, rng: random.Random, avoid_weeks=2):
-    """Pick one exercise for `pattern`, preferring ones not used recently."""
-    candidates = _candidates(pattern, history, used_this_week, avoid_weeks)
+def pick_exercise(pattern, history: History, used_this_week, rng: random.Random, avoid_weeks=2, excluded_names=frozenset()):
+    """Pick one exercise for `pattern`, preferring ones not used recently and
+    not in `excluded_names` (e.g. benched for the week due to soreness/injury)."""
+    candidates = _candidates(pattern, history, used_this_week, avoid_weeks, excluded_names)
     weights = [history.staleness(c.name) for c in candidates]
     if all(w == float("inf") for w in weights):
         weights = [1.0] * len(candidates)
@@ -80,8 +88,8 @@ def pick_exercise(pattern, history: History, used_this_week, rng: random.Random,
     return choice
 
 
-def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block"):
-    picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks) for p in patterns]
+def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset()):
+    picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
     return {
         "type": "superset",
         "title": title,
@@ -90,9 +98,15 @@ def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title=
     }
 
 
-def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out"):
-    pattern = rng.choice(patterns) if isinstance(patterns, (list, tuple)) else patterns
-    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks)]
+def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out", excluded_names=frozenset()):
+    pattern_options = patterns if isinstance(patterns, (list, tuple)) else (patterns,)
+    # Buy-outs choose freely among several patterns (unlike a superset, which
+    # needs one exercise per listed pattern) -- so if one option is entirely
+    # excluded, just steer the choice toward the ones that aren't, rather
+    # than rolling it anyway and having to ignore the exclusion downstream.
+    viable = [p for p in pattern_options if any(e.name not in excluded_names for e in ex_pool.by_pattern(p))]
+    pattern = rng.choice(viable) if viable else rng.choice(pattern_options)
+    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
     return {
         "type": "buyout",
         "title": title,
@@ -101,8 +115,8 @@ def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="B
     }
 
 
-def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set"):
-    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks)]
+def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set", excluded_names=frozenset()):
+    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
     reps = "/".join(str(r) for r in DROP_SET_REPS)
     return {
         "type": "drop_set",
@@ -112,8 +126,8 @@ def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="
     }
 
 
-def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher"):
-    picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks) for p in patterns]
+def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset()):
+    picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
     return {
         "type": "core_finisher",
         "title": title,
@@ -122,8 +136,8 @@ def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, t
     }
 
 
-def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher"):
-    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks)]
+def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset()):
+    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
     return {
         "type": "bag_round",
         "title": title,

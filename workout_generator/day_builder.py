@@ -49,35 +49,35 @@ DAY_TEMPLATES = [
 ]
 
 
-def build_day(template, history, used_this_week, rng, avoid_weeks=2):
+def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset()):
     blocks = [
         build_superset(
             template["block_a_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block A - Strength Superset",
+            title="Block A - Strength Superset", excluded_names=excluded_names,
         ),
         build_buyout(
             template["buyout_1_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 1",
+            title="Buy-Out 1", excluded_names=excluded_names,
         ),
         build_superset(
             template["block_b_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block B - Strength Superset",
+            title="Block B - Strength Superset", excluded_names=excluded_names,
         ),
         build_buyout(
             template["buyout_2_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 2",
+            title="Buy-Out 2", excluded_names=excluded_names,
         ),
         build_drop_set(
             template["drop_set_pattern"], history, used_this_week, rng, avoid_weeks,
-            title="Drop Set (10/8/6)",
+            title="Drop Set (10/8/6)", excluded_names=excluded_names,
         ),
         build_core_finisher(
             template["core_finisher_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Core Finisher",
+            title="Core Finisher", excluded_names=excluded_names,
         ),
         build_bag_round(
             ex_pool.BAG, history, used_this_week, rng, avoid_weeks,
-            title="Bag Finisher",
+            title="Bag Finisher", excluded_names=excluded_names,
         ),
     ]
     return {"title": template["title"], "blocks": blocks}

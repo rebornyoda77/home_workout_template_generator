@@ -9,6 +9,7 @@
         onsubmit="return confirm('Regenerate Week {{ week.week_index }}? This replaces its exercises with a fresh set.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="days" value="{{ week.days | length }}">
+    {% include "_exclude_patterns_field.html" %}
     <button type="submit" class="button">Regenerate This Week</button>
   </form>
   <form method="post" action="{{ url_for('delete_week_route', week_index=week.week_index) }}" class="inline-form"

@@ -208,6 +208,41 @@ class WebServerTests(unittest.TestCase):
         # template) may still show "Never used" for at least one exercise
         self.assertIn(b"Never used", response.data)
 
+    def test_dashboard_and_week_forms_offer_pattern_exclusion_checkboxes(self):
+        dashboard = self._login()
+        self.assertIn(b'name="exclude_patterns"', dashboard.data)
+        self.assertIn(b"Boxing Bag", dashboard.data)  # a pattern label, from PATTERN_LABELS
+
+    def test_generate_with_excluded_pattern_flashes_violation_warning_when_unavoidable(self):
+        # In a 4-day week every day template is always included, and
+        # "loaded_carry" is a single-option buy-out pattern (no alternative)
+        # in two of them -- excluding it entirely is always unavoidable.
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/generate",
+            data={
+                "days": "4", "avoid_weeks": "0", "csrf_token": csrf,
+                "exclude_patterns": ["loaded_carry"],
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"couldn&#39;t fully honor", response.data.lower())
+
+    def test_regenerate_with_excluded_pattern_posts_through_cleanly(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/regenerate",
+            data={"csrf_token": csrf, "exclude_patterns": ["push_horizontal"]},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Regenerated Week 1", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()
