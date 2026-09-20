@@ -66,6 +66,12 @@ A always needs a Squat and a Horizontal Push pick) — if excluding a whole
 pattern can't be fully honored for that reason, you'll get a warning listing
 which exercises had to be included anyway, rather than a silent no-op.
 
+Every `generate`/`regenerate`/`delete` also snapshots `data/history.json`
+into `data/backups/` (skipped if unchanged from the last snapshot, keeping
+the most recent 20) — it's the only state the "don't repeat too often"
+logic depends on, so it's worth protecting. `python main.py backups` lists
+what's there; to restore one, just copy it back over `data/history.json`.
+
 ## Day structure
 
 Every training day follows the same OTF-style block skeleton:
@@ -139,6 +145,7 @@ workout_generator/
 data/
   history.json      generated at runtime; tracks exercise-use history
   web_config.json    generated at runtime; hashed web passcode
+  backups/           generated at runtime; timestamped history.json snapshots
 output/
   week-*.md        generated weekly plans
 tests/

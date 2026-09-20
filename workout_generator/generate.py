@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 
 from . import exercises as ex_pool
+from .backup import backup_history
 from .formatter import week_to_markdown
 from .history import DEFAULT_HISTORY_PATH, History
 from .week_builder import build_week
@@ -75,6 +76,7 @@ def generate_week(
     output_path = None
     if save:
         history.save(history_path)
+        backup_history(history_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"week-{week['week_index']:02d}-{week['generated_at']}.md"
@@ -96,6 +98,7 @@ def delete_week(
     removed = history.delete_week(week_index)
     if removed:
         history.save(history_path)
+        backup_history(history_path)
         _remove_output_files(output_dir, week_index)
     return removed
 
@@ -137,6 +140,7 @@ def regenerate_week(
     if save:
         _remove_output_files(output_dir, week_index)
         history.save(history_path)
+        backup_history(history_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"week-{week['week_index']:02d}-{week['generated_at']}.md"

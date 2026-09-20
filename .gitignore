@@ -3,3 +3,4 @@ __pycache__/
 /output/*.md
 /data/history.json
 /data/web_config.json
+/data/backups/

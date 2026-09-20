@@ -3,13 +3,14 @@ import sys
 from pathlib import Path
 
 from . import exercises as ex_pool
+from .backup import DEFAULT_KEEP
 from .generate import (
     DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
     regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
 
-COMMANDS = ("generate", "list", "delete", "regenerate")
+COMMANDS = ("generate", "list", "delete", "regenerate", "backups")
 
 
 def _common_paths(parser):
@@ -91,6 +92,12 @@ def build_arg_parser():
     )
     _exclusion_args(regenerate_parser)
     _common_paths(regenerate_parser)
+
+    backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
+    backups_parser.add_argument(
+        "--history-file", type=Path, default=DEFAULT_HISTORY_PATH,
+        help=f"Path to the history JSON file (default: {DEFAULT_HISTORY_PATH}).",
+    )
 
     return parser
 
@@ -178,11 +185,25 @@ def _cmd_regenerate(args) -> int:
     return 0
 
 
+def _cmd_backups(args) -> int:
+    history_path = Path(args.history_file)
+    backups_dir = history_path.parent / "backups"
+    files = sorted(backups_dir.glob(f"{history_path.stem}_*.json")) if backups_dir.exists() else []
+    if not files:
+        print("No backups yet -- one is taken automatically each time history.json changes "
+              f"(keeping the most recent {DEFAULT_KEEP}).")
+        return 0
+    for f in files:
+        print(f"{f.name} ({f.stat().st_size} bytes)")
+    return 0
+
+
 _HANDLERS = {
     "generate": _cmd_generate,
     "list": _cmd_list,
     "delete": _cmd_delete,
     "regenerate": _cmd_regenerate,
+    "backups": _cmd_backups,
 }
 
 

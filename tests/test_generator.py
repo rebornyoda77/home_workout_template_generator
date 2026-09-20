@@ -8,6 +8,7 @@ from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool
 from workout_generator import generate as generate_module
+from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
 from workout_generator.day_builder import DAY_TEMPLATES, exercise_names
 from workout_generator.history import History
@@ -114,6 +115,66 @@ class HistoryTests(unittest.TestCase):
         history.delete_week(2)
         self.assertEqual(history.week_index, 3)
         self.assertEqual([w["week_index"] for w in history.weeks], [1, 3])
+
+
+class BackupTests(unittest.TestCase):
+    def test_no_backup_when_history_file_does_not_exist_yet(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            self.assertIsNone(backup_history(history_path))
+            self.assertFalse((Path(tmp_dir) / "backups").exists())
+
+    def test_backup_creates_a_timestamped_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            history_path.write_text('{"a": 1}', encoding="utf-8")
+
+            backup_path = backup_history(history_path)
+            self.assertIsNotNone(backup_path)
+            self.assertTrue(backup_path.exists())
+            self.assertEqual(backup_path.read_text(encoding="utf-8"), '{"a": 1}')
+            self.assertEqual(backup_path.parent, Path(tmp_dir) / "backups")
+
+    def test_backup_skips_when_content_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            history_path.write_text('{"a": 1}', encoding="utf-8")
+
+            first = backup_history(history_path)
+            second = backup_history(history_path)  # nothing changed
+            self.assertIsNotNone(first)
+            self.assertIsNone(second)
+
+            backups_dir = Path(tmp_dir) / "backups"
+            self.assertEqual(len(list(backups_dir.glob("*.json"))), 1)
+
+    def test_backup_snapshots_again_once_content_changes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            history_path.write_text('{"a": 1}', encoding="utf-8")
+            backup_history(history_path)
+
+            history_path.write_text('{"a": 2}', encoding="utf-8")
+            second = backup_history(history_path)
+            self.assertIsNotNone(second)
+
+            backups_dir = Path(tmp_dir) / "backups"
+            self.assertEqual(len(list(backups_dir.glob("*.json"))), 2)
+
+    def test_backup_prunes_to_the_keep_limit(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            backups_dir = Path(tmp_dir) / "backups"
+
+            for i in range(6):
+                history_path.write_text(f'{{"a": {i}}}', encoding="utf-8")
+                backup_history(history_path, keep=3)
+
+            remaining = sorted(backups_dir.glob("*.json"))
+            self.assertEqual(len(remaining), 3)
+            # the survivors should be the 3 most recently written
+            contents = [f.read_text(encoding="utf-8") for f in remaining]
+            self.assertEqual(contents, ['{"a": 3}', '{"a": 4}', '{"a": 5}'])
 
 
 class BlockSelectionTests(unittest.TestCase):
@@ -297,6 +358,29 @@ class WeekBuilderTests(unittest.TestCase):
 
 
 class GenerateModuleTests(unittest.TestCase):
+    def test_generate_week_creates_a_backup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            generate_module.generate_week(4, history_path=history_path, seed=1)
+            backups = list((Path(tmp_dir) / "backups").glob("*.json"))
+            self.assertEqual(len(backups), 1)
+
+    def test_generate_week_dry_run_does_not_create_a_backup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            generate_module.generate_week(4, history_path=history_path, seed=1, save=False)
+            self.assertFalse((Path(tmp_dir) / "backups").exists())
+
+    def test_regenerate_and_delete_each_create_their_own_backup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            week, _markdown, _out = generate_module.generate_week(4, history_path=history_path, seed=1)
+            generate_module.regenerate_week(week["week_index"], history_path=history_path, seed=2)
+            generate_module.delete_week(week["week_index"], history_path=history_path)
+
+            backups = list((Path(tmp_dir) / "backups").glob("*.json"))
+            self.assertEqual(len(backups), 3)  # generate, regenerate, delete each changed the content
+
     def test_delete_week_removes_history_entry_and_output_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             history_path = Path(tmp_dir) / "history.json"
@@ -514,6 +598,27 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 cli_main(["generate", "--exclude-pattern", "not_a_real_pattern"])
+
+    def test_backups_subcommand_reports_none_then_lists_snapshots(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["backups", "--history-file", str(history_path)])
+            self.assertEqual(rc, 0)
+            self.assertIn("No backups yet", stdout.getvalue())
+
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stdout2 = io.StringIO()
+            with redirect_stdout(stdout2):
+                rc = cli_main(["backups", "--history-file", str(history_path)])
+            self.assertEqual(rc, 0)
+            self.assertIn("history_", stdout2.getvalue())
+            self.assertIn("bytes)", stdout2.getvalue())
 
 
 if __name__ == "__main__":
