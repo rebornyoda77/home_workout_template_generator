@@ -152,6 +152,17 @@
   .row-actions .inline-form { margin-left: 6px; }
   .danger-button { color: var(--danger); border-color: var(--border-strong); }
   .danger-button:hover { background: var(--danger-soft); border-color: var(--danger); }
+  .rating-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 4px; }
+  .rating-label { color: var(--text-muted); font-size: 13.5px; margin-right: 4px; }
+  .star-button {
+    background: none; border: none; padding: 2px 1px; font-size: 22px; line-height: 1;
+    color: var(--border-strong); cursor: pointer; box-shadow: none;
+  }
+  .star-button:hover { background: none; border: none; color: var(--accent); transform: none; }
+  .star-button.star-filled { color: var(--accent); }
+  .rating-clear-button { margin: 0 0 0 6px; padding: 4px 10px; font-size: 12.5px; }
+  .rating-note { margin: 0 0 20px; font-size: 12.5px; }
+  .rating-display { color: var(--accent); white-space: nowrap; }
   .error { color: var(--danger); background: var(--danger-soft); padding: 9px 12px; border-radius: var(--radius-sm); font-size: 13.5px; margin: 10px 0; }
   .empty { color: var(--text-muted); font-style: italic; font-size: 14px; padding: 14px 0; }
   @media (max-width: 480px) {

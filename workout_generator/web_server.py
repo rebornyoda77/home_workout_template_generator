@@ -15,7 +15,7 @@ from . import exercises as ex_pool
 from . import web_config
 from .generate import (
     DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
-    log_day, regenerate_week, resolve_excluded_names,
+    log_day, rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
 from .progression import suggestion_for
@@ -218,6 +218,28 @@ def create_app(
         week, _markdown, _out_path = result
         flash(f"Regenerated Week {week_index}.")
         _flash_exclusion_violations(week, excluded_patterns)
+        return redirect(url_for("view_week", week_index=week_index))
+
+    @app.route("/week/<int:week_index>/rate", methods=["POST"])
+    def rate_week_route(week_index: int):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        rating_raw = request.form.get("rating", "").strip()
+        rating = None
+        if rating_raw:
+            try:
+                parsed = int(rating_raw)
+            except ValueError:
+                parsed = None
+            if parsed in (1, 2, 3, 4, 5):
+                rating = parsed
+
+        updated = rate_week(week_index, rating, history_path=app.config["HISTORY_PATH"])
+        if not updated:
+            flash(f"Week {week_index} doesn't exist.")
+            return redirect(url_for("history_page"))
+        flash(f"Rated Week {week_index}." if rating else f"Cleared Week {week_index}'s rating.")
         return redirect(url_for("view_week", week_index=week_index))
 
     @app.route("/week/<int:week_index>/day/<int:day_index>/log", methods=["POST"])

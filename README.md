@@ -34,6 +34,8 @@ python main.py list                     # list every generated week
 python main.py delete --week 3          # delete week 3
 python main.py regenerate --week 3      # reroll week 3's exercises, same slot/day count
 python main.py regenerate --week 3 --days 4   # ...and change its day count too
+python main.py rate --week 3 --stars 5  # rate how week 3 went (1-5)
+python main.py rate --week 3 --clear    # remove that rating
 
 # bench specific exercises or a whole movement pattern for this week (e.g. a sore shoulder):
 python main.py generate --exclude-exercise "Shoulder Press Half-Kneeling"
@@ -44,7 +46,8 @@ python main.py regenerate --week 3 --exclude-pattern push_vertical --exclude-pat
 Each `generate`/`regenerate` run:
 
 1. Picks a set of day templates (see below), rotating which template starts
-   the week so the day-to-day flow varies week over week.
+   the week so the day-to-day flow varies week over week -- nudged by each
+   template's average week rating, if any (see "Rate this week" below).
 2. Fills each block with exercises, preferring ones that haven't been used
    in the last `--avoid-weeks` weeks (default 2) and never repeating an
    exercise already used elsewhere that same week while alternatives exist.
@@ -156,6 +159,16 @@ set) followed by a timed rest. Short tones mark each transition and a longer
 tone marks the end of the block; Start/Pause and Skip controls sit under the
 countdown, and the timer works the same way on the full week view and in
 Focus Mode.
+
+Every week page also has a 1-5 star **Rate this week** control (Clear to
+remove it). It's more than a note to yourself: a week's rating nudges which
+day templates ("Lower-Body Power & Push", "Total-Body Metabolic", etc.) get
+picked more -- or less -- often in future weeks, on top of the usual
+week-to-week rotation. A template with no rated weeks behind it yet is
+treated as neutral, so an unrated history behaves exactly like plain
+rotation always has. History's Rating column shows each past week's stars
+at a glance. CLI parity: `python main.py rate --week N --stars 1-5` (or
+`--clear`).
 
 The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it

@@ -12,6 +12,7 @@ from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
 from workout_generator.day_builder import DAY_TEMPLATES, exercise_names
 from workout_generator.history import History
+from workout_generator import week_builder as week_builder_module
 from workout_generator.week_builder import build_week, regenerate_week
 
 ALLOWED_EQUIPMENT = {"kettlebell", "dumbbell", "band", "bench", "treadmill", "bag", "mat"}
@@ -234,6 +235,47 @@ class HistoryTests(unittest.TestCase):
         result = history.last_log(name)
         self.assertIsNotNone(result)
         self.assertEqual(result["week_index"], 1)  # not silently overridden by an unlogged week 2
+
+    def test_rate_week_sets_and_clears_rating(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        self.assertTrue(history.rate_week(1, 4))
+        self.assertEqual(history.week_by_index(1)["rating"], 4)
+
+        self.assertTrue(history.rate_week(1, None))
+        self.assertIsNone(history.week_by_index(1)["rating"])
+
+    def test_rate_week_rejects_out_of_range_rating(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        with self.assertRaises(ValueError):
+            history.rate_week(1, 0)
+        with self.assertRaises(ValueError):
+            history.rate_week(1, 6)
+
+    def test_rate_week_returns_false_for_unknown_week(self):
+        history = History()
+        self.assertFalse(history.rate_week(999, 5))
+
+    def test_template_average_ratings_ignores_unrated_weeks(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1, unrated
+        self.assertEqual(history.template_average_ratings(), {})
+
+    def test_template_average_ratings_averages_across_rated_weeks(self):
+        history = History()
+        week1 = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        week2 = build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")
+        history.rate_week(week1["week_index"], 5)
+        history.rate_week(week2["week_index"], 3)
+
+        # both weeks used all 4 templates (4-day weeks), so every title
+        # averages the two ratings together
+        averages = history.template_average_ratings()
+        self.assertEqual(set(averages), {t["title"] for t in DAY_TEMPLATES})
+        for avg in averages.values():
+            self.assertAlmostEqual(avg, 4.0)
 
 
 class ProgressionTests(unittest.TestCase):
@@ -493,6 +535,61 @@ class WeekBuilderTests(unittest.TestCase):
         week2 = build_week(3, history, rng=random.Random(4), generated_at="2026-09-13")
         self.assertNotEqual(week1["days"][0]["title"], week2["days"][0]["title"])
 
+    def test_select_templates_with_no_bias_is_plain_rotation(self):
+        # start_offset=2, 3 of 4 templates: {2, 3, 0} in rotation order --
+        # the same result the old rotation-only implementation gave, since
+        # an empty/neutral bias must never change which templates are picked.
+        chosen = week_builder_module._select_templates(3, start_offset=2, rating_bias={})
+        expected = [DAY_TEMPLATES[2], DAY_TEMPLATES[3], DAY_TEMPLATES[0]]
+        self.assertEqual(chosen, expected)
+
+    def test_select_templates_favors_a_highly_rated_template(self):
+        # DAY_TEMPLATES[3] is last in this rotation (weakest rotation
+        # position) but a strong +3 bias should still pull it into a
+        # 3-of-4 selection ahead of a neutral template earlier in rotation.
+        bias = {DAY_TEMPLATES[3]["title"]: 3.0}
+        chosen = week_builder_module._select_templates(3, start_offset=0, rating_bias=bias)
+        titles = {t["title"] for t in chosen}
+        self.assertIn(DAY_TEMPLATES[3]["title"], titles)
+        self.assertNotIn(DAY_TEMPLATES[2]["title"], titles)
+
+    def test_select_templates_penalizes_a_poorly_rated_template(self):
+        # start_offset=1 puts DAY_TEMPLATES[0] last in rotation (weakest
+        # position already); a -3 bias on top of that should knock it out
+        # of a 3-of-4 selection outright.
+        bias = {DAY_TEMPLATES[0]["title"]: -3.0}
+        chosen = week_builder_module._select_templates(3, start_offset=1, rating_bias=bias)
+        titles = {t["title"] for t in chosen}
+        self.assertNotIn(DAY_TEMPLATES[0]["title"], titles)
+
+    def test_select_templates_still_uses_every_template_for_a_four_day_week(self):
+        bias = {DAY_TEMPLATES[0]["title"]: -3.0, DAY_TEMPLATES[2]["title"]: 3.0}
+        chosen = week_builder_module._select_templates(4, start_offset=0, rating_bias=bias)
+        self.assertEqual({t["title"] for t in chosen}, {t["title"] for t in DAY_TEMPLATES})
+
+    def test_template_bias_is_neutral_without_a_rating(self):
+        self.assertEqual(week_builder_module._template_bias(None), 0.0)
+
+    def test_template_bias_scales_with_rating(self):
+        self.assertGreater(week_builder_module._template_bias(5), 0)
+        self.assertLess(week_builder_module._template_bias(1), 0)
+        self.assertEqual(week_builder_module._template_bias(3), 0.0)
+
+    def test_build_week_includes_a_never_rated_template_over_poorly_rated_ones(self):
+        # 1-star feeds a -3 bias, exactly offsetting the +/-3 spread rotation
+        # position can produce on its own -- so a template that's never been
+        # part of a rated week can never lose out to three 1-star ones,
+        # whatever the rotation alignment happens to be that week.
+        history = History()
+        week1 = build_week(3, history, rng=random.Random(1), generated_at="2026-09-06")
+        history.rate_week(week1["week_index"], 1)
+
+        all_titles = {t["title"] for t in DAY_TEMPLATES}
+        never_used_title = (all_titles - {d["title"] for d in week1["days"]}).pop()
+
+        week2 = build_week(3, history, rng=random.Random(2), generated_at="2026-09-13")
+        self.assertIn(never_used_title, [d["title"] for d in week2["days"]])
+
     def test_rejects_out_of_range_day_counts(self):
         history = History()
         with self.assertRaises(ValueError):
@@ -604,6 +701,28 @@ class GenerateModuleTests(unittest.TestCase):
 
             backups = list((Path(tmp_dir) / "backups").glob("*.json"))
             self.assertEqual(len(backups), 1)  # only the one from generate
+
+    def test_rate_week_persists_and_backs_up(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            week, _markdown, _out = generate_module.generate_week(4, history_path=history_path, seed=1)
+
+            updated = generate_module.rate_week(week["week_index"], 4, history_path=history_path)
+            self.assertTrue(updated)
+
+            reloaded = History.load(history_path)
+            self.assertEqual(reloaded.week_by_index(week["week_index"])["rating"], 4)
+
+            backups = list((Path(tmp_dir) / "backups").glob("*.json"))
+            self.assertEqual(len(backups), 2)  # one from generate, one from rating
+
+    def test_rate_week_returns_false_for_unknown_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            generate_module.generate_week(4, history_path=history_path, seed=1)
+
+            updated = generate_module.rate_week(999, 5, history_path=history_path)
+            self.assertFalse(updated)
 
     def test_generate_week_creates_a_backup(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -807,6 +926,30 @@ class CliTests(unittest.TestCase):
 
             rc = cli_main(["regenerate", "--week", "999", *common])
             self.assertEqual(rc, 1)
+
+    def test_rate_subcommand_sets_and_clears_a_rating(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            rc = cli_main(["rate", "--week", "1", "--stars", "4", *common])
+            self.assertEqual(rc, 0)
+            self.assertEqual(History.load(history_path).week_by_index(1)["rating"], 4)
+
+            rc = cli_main(["rate", "--week", "1", "--clear", *common])
+            self.assertEqual(rc, 0)
+            self.assertIsNone(History.load(history_path).week_by_index(1)["rating"])
+
+            rc = cli_main(["rate", "--week", "999", "--stars", "5", *common])
+            self.assertEqual(rc, 1)
+
+    def test_rate_subcommand_requires_stars_or_clear(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                cli_main(["rate", "--week", "1"])
 
     def test_generate_exclude_flags_keep_excluded_names_out_of_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

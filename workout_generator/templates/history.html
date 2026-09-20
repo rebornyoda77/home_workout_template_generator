@@ -4,12 +4,13 @@
 <h1>Week History</h1>
 {% if weeks %}
 <table>
-<tr><th>Week</th><th>Generated</th><th>Days</th><th></th></tr>
+<tr><th>Week</th><th>Generated</th><th>Days</th><th>Rating</th><th></th></tr>
 {% for w in weeks %}
 <tr>
   <td>{{ w.week_index }}</td>
   <td>{{ w.generated_at }}</td>
   <td>{{ w.days | map(attribute='title') | join(', ') }}</td>
+  <td class="rating-display">{{ '★' * w.rating if w.rating else '—' }}</td>
   <td class="row-actions">
     <a href="{{ url_for('view_week', week_index=w.week_index) }}" class="button">View</a>
     <form method="post" action="{{ url_for('delete_week_route', week_index=w.week_index) }}" class="inline-form"
