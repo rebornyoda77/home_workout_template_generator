@@ -30,10 +30,11 @@ CORE_ANTI = "core_anti_extension_rotation"
 POWER = "power_plyo"
 CARRY = "loaded_carry"
 CARDIO = "cardio_conditioning"  # rower-interval substitute block
+BAG = "boxing_bag"  # dedicated bag-round finisher, on every training day
 
 ALL_PATTERNS = [
     SQUAT, HINGE, LUNGE, PUSH_H, PULL_H, PUSH_V, PULL_V,
-    ARMS, GLUTES, CALVES, CORE_FLEX, CORE_ANTI, POWER, CARRY, CARDIO,
+    ARMS, GLUTES, CALVES, CORE_FLEX, CORE_ANTI, POWER, CARRY, CARDIO, BAG,
 ]
 
 
@@ -150,6 +151,15 @@ EXERCISES = [
     Exercise("Kettlebell Swings", CARDIO, ("kettlebell",), load_hint="1x KB, 10-15 lb",
               note="rower interval sub", tags=("power",)),
     Exercise("Boxing Bag Combos", CARDIO, ("bag",), load_hint="n/a", note="rower interval sub"),
+
+    # ---- Boxing bag (dedicated finisher, every training day) ------------------
+    Exercise("Jab-Cross Combo (1-2)", BAG, ("bag",), load_hint="n/a"),
+    Exercise("Jab-Cross-Hook Combo (1-2-3)", BAG, ("bag",), load_hint="n/a"),
+    Exercise("Hook-Hook-Cross Combo", BAG, ("bag",), load_hint="n/a"),
+    Exercise("Uppercut-Cross Combo", BAG, ("bag",), load_hint="n/a"),
+    Exercise("Power Cross Ladder", BAG, ("bag",), load_hint="n/a", note="alternating max-power crosses"),
+    Exercise("Speed Jabs", BAG, ("bag",), load_hint="n/a", note="high frequency, light power"),
+    Exercise("Freestyle Combo Round", BAG, ("bag",), load_hint="n/a", note="mix combos freely, keep hands moving"),
 ]
 
 

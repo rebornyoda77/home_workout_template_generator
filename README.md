@@ -56,6 +56,10 @@ Every training day follows the same OTF-style block skeleton:
 5. **Drop Set (10/8/6)** — one exercise, three rounds of descending reps.
 6. **Core Finisher** — a timed interval pairing a flexion/rotation move with
    an anti-extension/anti-rotation move.
+7. **Bag Finisher** — a timed round on the boxing bag (e.g. 3 rounds of 2:00
+   work / 30s rest), picked from a dedicated pool of distinct combos
+   (jab-cross, hook-hook-cross, uppercut-cross, power cross ladder, speed
+   jabs, ...) so it varies day to day. Every training day gets one.
 
 Four day templates rotate through the week (`Lower-Body Power & Push`,
 `Upper-Body Pull & Conditioning`, `Total-Body Metabolic`,

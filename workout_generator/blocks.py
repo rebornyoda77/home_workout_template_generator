@@ -33,6 +33,12 @@ CORE_FINISHER_STRUCTURES = [
 BUYOUT_DURATION = "2:00 continuous buy-out"
 DROP_SET_REPS = (10, 8, 6)
 
+BAG_ROUND_STRUCTURES = [
+    "3 rounds: 2:00 work / 30s rest -- throw combos non-stop",
+    "1 round: 3:00 continuous -- keep combos moving the whole round",
+    "4 rounds: 1:00 work / 20s rest -- high output, fast hands",
+]
+
 
 def _candidates(pattern, history: History, used_this_week, avoid_weeks):
     pool = ex_pool.by_pattern(pattern)
@@ -112,5 +118,15 @@ def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, t
         "type": "core_finisher",
         "title": title,
         "structure": rng.choice(CORE_FINISHER_STRUCTURES),
+        "exercises": picked,
+    }
+
+
+def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher"):
+    picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks)]
+    return {
+        "type": "bag_round",
+        "title": title,
+        "structure": rng.choice(BAG_ROUND_STRUCTURES),
         "exercises": picked,
     }

@@ -1,11 +1,11 @@
 """Day templates: each defines the OTF-style block sequence for one training
-day (two timed supersets, two 2-minute buy-outs, one drop-set round, and a
-timed core finisher), expressed purely in movement patterns so the actual
-exercises can rotate week to week.
+day (two timed supersets, two 2-minute buy-outs, one drop-set round, a
+timed core finisher, and a boxing-bag round), expressed purely in movement
+patterns so the actual exercises can rotate week to week.
 """
 
 from . import exercises as ex_pool
-from .blocks import build_buyout, build_core_finisher, build_drop_set, build_superset
+from .blocks import build_bag_round, build_buyout, build_core_finisher, build_drop_set, build_superset
 
 CORE_PAIR = (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI)
 
@@ -74,6 +74,10 @@ def build_day(template, history, used_this_week, rng, avoid_weeks=2):
         build_core_finisher(
             template["core_finisher_patterns"], history, used_this_week, rng, avoid_weeks,
             title="Core Finisher",
+        ),
+        build_bag_round(
+            ex_pool.BAG, history, used_this_week, rng, avoid_weeks,
+            title="Bag Finisher",
         ),
     ]
     return {"title": template["title"], "blocks": blocks}

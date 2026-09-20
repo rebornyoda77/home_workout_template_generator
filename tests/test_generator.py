@@ -23,7 +23,7 @@ class ExercisePoolTests(unittest.TestCase):
             )
 
     def test_every_pattern_used_by_a_day_template_has_exercises(self):
-        used_patterns = set()
+        used_patterns = {ex_pool.BAG}  # every day gets a bag finisher, not part of any template dict
         for template in DAY_TEMPLATES:
             used_patterns.update(template["block_a_patterns"])
             used_patterns.update(template["block_b_patterns"])
@@ -104,11 +104,11 @@ class WeekBuilderTests(unittest.TestCase):
 
         self.assertEqual(len(week["days"]), 4)
         for day in week["days"]:
-            self.assertEqual(len(day["blocks"]), 6)
+            self.assertEqual(len(day["blocks"]), 7)
             types = [b["type"] for b in day["blocks"]]
             self.assertEqual(
                 types,
-                ["superset", "buyout", "superset", "buyout", "drop_set", "core_finisher"],
+                ["superset", "buyout", "superset", "buyout", "drop_set", "core_finisher", "bag_round"],
             )
 
     def test_three_day_week_uses_distinct_templates(self):
@@ -152,6 +152,22 @@ class WeekBuilderTests(unittest.TestCase):
         self.assertIsInstance(first_exercise, dict)
         self.assertIn("name", first_exercise)
         self.assertIn("load_hint", first_exercise)
+
+    def test_every_day_gets_a_varied_bag_finisher(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(13), generated_at="2026-09-20")
+
+        bag_names = []
+        for day in week["days"]:
+            bag_blocks = [b for b in day["blocks"] if b["type"] == "bag_round"]
+            self.assertEqual(len(bag_blocks), 1)
+            bag_block = bag_blocks[0]
+            self.assertEqual(len(bag_block["exercises"]), 1)
+            self.assertEqual(bag_block["exercises"][0].pattern, ex_pool.BAG)
+            bag_names.append(bag_block["exercises"][0].name)
+
+        # 4 days, 7 distinct bag combos in the pool -- no repeats within the week
+        self.assertEqual(len(set(bag_names)), len(bag_names))
 
         self.assertIsNone(history.week_by_index(999))
 
