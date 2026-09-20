@@ -37,21 +37,18 @@ def serialize_day(day: dict) -> dict:
     }
 
 
-def build_week(
-    num_days: int,
-    history: History,
-    rng: random.Random = None,
-    avoid_weeks: int = 2,
-    generated_at: str = None,
-):
+def _validate_num_days(num_days: int) -> None:
     if num_days < 3 or num_days > 4:
         raise ValueError("Weekly plans support 3-4 workout days")
 
-    rng = rng or random.Random()
-    generated_at = generated_at or date.today().isoformat()
 
-    week_index = history.begin_week()
-    start_offset = (week_index - 1) % len(DAY_TEMPLATES)
+def _build_days(num_days: int, slot_index: int, history: History, rng: random.Random, avoid_weeks: int):
+    """Builds one week's worth of days. `slot_index` only decides which day
+    templates to start rotating from (so a given slot always leans toward
+    the same day-template flavor); it does not affect exercise freshness
+    scoring, which always runs off history's live week counter -- see
+    History.record_week's docstring for why that matters for regenerate."""
+    start_offset = (slot_index - 1) % len(DAY_TEMPLATES)
     templates = _select_templates(num_days, start_offset)
 
     used_this_week = set()
@@ -60,8 +57,57 @@ def build_week(
         day = build_day(template, history, used_this_week, rng, avoid_weeks)
         history.record_day(day["title"], exercise_names(day))
         days.append(day)
+    return days
 
+
+def build_week(
+    num_days: int,
+    history: History,
+    rng: random.Random = None,
+    avoid_weeks: int = 2,
+    generated_at: str = None,
+):
+    _validate_num_days(num_days)
+    rng = rng or random.Random()
+    generated_at = generated_at or date.today().isoformat()
+
+    week_index = history.begin_week()
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks)
     history.record_week(generated_at, [serialize_day(d) for d in days])
+
+    return {
+        "week_index": week_index,
+        "generated_at": generated_at,
+        "days": days,
+    }
+
+
+def regenerate_week(
+    week_index: int,
+    num_days: int,
+    history: History,
+    rng: random.Random = None,
+    avoid_weeks: int = 2,
+    generated_at: str = None,
+):
+    """Rerolls a specific week's content in place, keeping its week_index
+    (so its slot in history/the web UI doesn't move). Any existing entry
+    at that index is discarded first -- its exercises no longer count
+    toward freshness scoring, so the reroll is free to reuse them if
+    they're otherwise the freshest choice."""
+    _validate_num_days(num_days)
+    rng = rng or random.Random()
+    generated_at = generated_at or date.today().isoformat()
+
+    history.delete_week(week_index)
+    # Regenerating happens "now", so freshness scoring shouldn't regress to
+    # treat it as further in the past than the most recent week still on
+    # record -- only relevant when the week being regenerated was itself
+    # the highest index and got wiped out by delete_week above.
+    history.week_index = max(history.week_index, week_index)
+
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks)
+    history.record_week(generated_at, [serialize_day(d) for d in days], week_index=week_index)
 
     return {
         "week_index": week_index,

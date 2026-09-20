@@ -12,7 +12,7 @@ from pathlib import Path
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 
 from . import web_config
-from .generate import DEFAULT_OUTPUT_DIR, generate_week
+from .generate import DEFAULT_OUTPUT_DIR, delete_week, generate_week, regenerate_week
 from .history import DEFAULT_HISTORY_PATH, History
 
 DEFAULT_PORT = 5050
@@ -114,13 +114,67 @@ def create_app(
         entry = history.week_by_index(week_index)
         if entry is None:
             return "That week hasn't been generated.", 404
-        return render_template("week.html", active_page="weeks", week=entry)
+        return render_template(
+            "week.html", active_page="weeks", week=entry, csrf_token=_new_csrf_token(),
+        )
+
+    @app.route("/week/<int:week_index>/delete", methods=["POST"])
+    def delete_week_route(week_index: int):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        removed = delete_week(
+            week_index,
+            history_path=app.config["HISTORY_PATH"],
+            output_dir=app.config["OUTPUT_DIR"],
+        )
+        if removed:
+            flash(f"Deleted Week {week_index}.")
+        else:
+            flash(f"Week {week_index} doesn't exist.")
+        return redirect(url_for("history_page"))
+
+    @app.route("/week/<int:week_index>/regenerate", methods=["POST"])
+    def regenerate_week_route(week_index: int):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        days_raw = request.form.get("days", "").strip()
+        days = None
+        if days_raw:
+            try:
+                parsed = int(days_raw)
+                if parsed in (3, 4):
+                    days = parsed
+            except ValueError:
+                pass
+
+        try:
+            avoid_weeks = int(request.form.get("avoid_weeks", 2))
+        except ValueError:
+            avoid_weeks = 2
+        avoid_weeks = max(0, avoid_weeks)
+
+        result = regenerate_week(
+            week_index,
+            history_path=app.config["HISTORY_PATH"],
+            output_dir=app.config["OUTPUT_DIR"],
+            num_days=days,
+            avoid_weeks=avoid_weeks,
+        )
+        if result is None:
+            flash(f"Week {week_index} doesn't exist.")
+            return redirect(url_for("history_page"))
+
+        flash(f"Regenerated Week {week_index}.")
+        return redirect(url_for("view_week", week_index=week_index))
 
     @app.route("/history")
     def history_page():
         history = History.load(app.config["HISTORY_PATH"])
         return render_template(
             "history.html", active_page="history", weeks=list(reversed(history.weeks)),
+            csrf_token=_new_csrf_token(),
         )
 
     return app

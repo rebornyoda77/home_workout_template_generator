@@ -10,7 +10,14 @@
   <td>{{ w.week_index }}</td>
   <td>{{ w.generated_at }}</td>
   <td>{{ w.days | map(attribute='title') | join(', ') }}</td>
-  <td><a href="{{ url_for('view_week', week_index=w.week_index) }}" class="button">View</a></td>
+  <td class="row-actions">
+    <a href="{{ url_for('view_week', week_index=w.week_index) }}" class="button">View</a>
+    <form method="post" action="{{ url_for('delete_week_route', week_index=w.week_index) }}" class="inline-form"
+          onsubmit="return confirm('Delete Week {{ w.week_index }}? This can\'t be undone.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button danger-button">Delete</button>
+    </form>
+  </td>
 </tr>
 {% endfor %}
 </table>

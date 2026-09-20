@@ -3,5 +3,20 @@
 {% block content %}
 <h1>Week {{ week.week_index }}</h1>
 <p class="meta">Generated {{ week.generated_at }} — <a href="{{ url_for('history_page') }}">all weeks</a> · <a href="{{ url_for('dashboard') }}">generate a new one</a></p>
+
+<div class="week-actions">
+  <form method="post" action="{{ url_for('regenerate_week_route', week_index=week.week_index) }}" class="inline-form"
+        onsubmit="return confirm('Regenerate Week {{ week.week_index }}? This replaces its exercises with a fresh set.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="days" value="{{ week.days | length }}">
+    <button type="submit" class="button">Regenerate This Week</button>
+  </form>
+  <form method="post" action="{{ url_for('delete_week_route', week_index=week.week_index) }}" class="inline-form"
+        onsubmit="return confirm('Delete Week {{ week.week_index }}? This can\'t be undone.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="button danger-button">Delete This Week</button>
+  </form>
+</div>
+
 {% include "_week_days.html" %}
 {% endblock %}

@@ -5,10 +5,11 @@ import unittest
 from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool
+from workout_generator import generate as generate_module
 from workout_generator.cli import main as cli_main
 from workout_generator.day_builder import DAY_TEMPLATES, exercise_names
 from workout_generator.history import History
-from workout_generator.week_builder import build_week
+from workout_generator.week_builder import build_week, regenerate_week
 
 ALLOWED_EQUIPMENT = {"kettlebell", "dumbbell", "band", "bench", "treadmill", "bag", "mat"}
 
@@ -66,6 +67,40 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(reloaded.last_used, history.last_used)
         self.assertEqual(reloaded.use_count, history.use_count)
         self.assertEqual(reloaded.weeks, history.weeks)
+
+    def test_delete_week_removes_entry_and_recomputes_aggregates(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")  # week 2
+
+        self.assertTrue(history.delete_week(1))
+        self.assertIsNone(history.week_by_index(1))
+        self.assertIsNotNone(history.week_by_index(2))
+        # nothing should still claim to have last been used in week 1
+        self.assertNotIn(1, history.last_used.values())
+
+    def test_delete_week_returns_false_for_unknown_index(self):
+        history = History()
+        self.assertFalse(history.delete_week(999))
+
+    def test_deleting_latest_week_frees_its_index(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")  # week 2
+        self.assertEqual(history.week_index, 2)
+
+        history.delete_week(2)
+        self.assertEqual(history.week_index, 1)
+
+    def test_deleting_a_middle_week_does_not_shrink_the_counter(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")  # week 2
+        build_week(4, history, rng=random.Random(3), generated_at="2026-09-20")  # week 3
+
+        history.delete_week(2)
+        self.assertEqual(history.week_index, 3)
+        self.assertEqual([w["week_index"] for w in history.weeks], [1, 3])
 
 
 class BlockSelectionTests(unittest.TestCase):
@@ -171,6 +206,89 @@ class WeekBuilderTests(unittest.TestCase):
 
         self.assertIsNone(history.week_by_index(999))
 
+    def test_regenerate_week_keeps_index_but_changes_content(self):
+        history = History()
+        original = build_week(4, history, rng=random.Random(21), generated_at="2026-09-06")
+
+        regenerated = regenerate_week(
+            1, 4, history, rng=random.Random(99), avoid_weeks=0, generated_at="2026-09-20",
+        )
+
+        self.assertEqual(regenerated["week_index"], 1)
+        self.assertEqual(regenerated["generated_at"], "2026-09-20")
+        self.assertEqual(len(history.weeks), 1)  # replaced, not appended
+        self.assertEqual(history.week_by_index(1)["generated_at"], "2026-09-20")
+
+        def names(week):
+            return sorted(
+                e.name for day in week["days"] for block in day["blocks"] for e in block["exercises"]
+            )
+
+        self.assertNotEqual(names(original), names(regenerated))
+
+    def test_regenerate_week_can_change_day_count(self):
+        history = History()
+        build_week(4, history, rng=random.Random(5), generated_at="2026-09-06")
+
+        regenerated = regenerate_week(1, 3, history, rng=random.Random(6), generated_at="2026-09-20")
+        self.assertEqual(len(regenerated["days"]), 3)
+        self.assertEqual(len(history.week_by_index(1)["days"]), 3)
+
+
+class GenerateModuleTests(unittest.TestCase):
+    def test_delete_week_removes_history_entry_and_output_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            week, _markdown, out_path = generate_module.generate_week(
+                4, history_path=history_path, output_dir=output_dir, seed=1,
+            )
+            self.assertTrue(out_path.exists())
+
+            removed = generate_module.delete_week(
+                week["week_index"], history_path=history_path, output_dir=output_dir,
+            )
+            self.assertTrue(removed)
+            self.assertFalse(out_path.exists())
+
+            history = History.load(history_path)
+            self.assertIsNone(history.week_by_index(week["week_index"]))
+
+    def test_delete_week_returns_false_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            removed = generate_module.delete_week(999, history_path=history_path)
+            self.assertFalse(removed)
+
+    def test_regenerate_week_replaces_output_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            week, _markdown, old_path = generate_module.generate_week(
+                4, history_path=history_path, output_dir=output_dir, seed=1,
+                avoid_weeks=0,
+            )
+
+            result = generate_module.regenerate_week(
+                week["week_index"], history_path=history_path, output_dir=output_dir,
+                seed=2, avoid_weeks=0,
+            )
+            self.assertIsNotNone(result)
+            new_week, _markdown, new_path = result
+
+            self.assertEqual(new_week["week_index"], week["week_index"])
+            self.assertTrue(new_path.exists())
+            written_files = list(output_dir.glob("week-*.md"))
+            self.assertEqual(len(written_files), 1)  # old file cleaned up, not left orphaned
+
+    def test_regenerate_week_returns_none_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            result = generate_module.regenerate_week(999, history_path=history_path)
+            self.assertIsNone(result)
+
 
 class CliTests(unittest.TestCase):
     def test_dry_run_does_not_write_history_or_output(self):
@@ -206,6 +324,64 @@ class CliTests(unittest.TestCase):
             self.assertTrue(history_path.exists())
             written_files = list(output_dir.glob("week-*.md"))
             self.assertEqual(len(written_files), 1)
+
+    def test_generate_subcommand_matches_flat_form(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            rc = cli_main([
+                "generate", "--days", "4", "--seed", "9",
+                "--history-file", str(history_path), "--output-dir", str(output_dir),
+            ])
+            self.assertEqual(rc, 0)
+            self.assertTrue(history_path.exists())
+
+    def test_list_reports_no_weeks_then_generated_weeks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            rc = cli_main(["list", *common])
+            self.assertEqual(rc, 0)
+
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+            rc = cli_main(["list", *common])
+            self.assertEqual(rc, 0)
+
+            history = History.load(history_path)
+            self.assertEqual(len(history.weeks), 1)
+
+    def test_delete_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            rc = cli_main(["delete", "--week", "1", *common])
+            self.assertEqual(rc, 0)
+            self.assertIsNone(History.load(history_path).week_by_index(1))
+
+            rc = cli_main(["delete", "--week", "1", *common])
+            self.assertEqual(rc, 1)  # already gone
+
+    def test_regenerate_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            cli_main(["generate", "--days", "4", "--seed", "1", *common])
+
+            rc = cli_main(["regenerate", "--week", "1", "--seed", "2", *common])
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(History.load(history_path).weeks), 1)
+
+            rc = cli_main(["regenerate", "--week", "999", *common])
+            self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":

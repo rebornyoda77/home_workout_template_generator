@@ -91,6 +91,70 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/logout", follow_redirects=True)
         self.assertIn(b"Passcode", response.data)
 
+    def _generate_week(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        return self.client.post(
+            "/generate", data={"days": "4", "avoid_weeks": "2", "csrf_token": csrf},
+            follow_redirects=True,
+        )
+
+    def test_delete_week_requires_valid_csrf_token(self):
+        self._generate_week()
+        response = self.client.post("/week/1/delete", data={"csrf_token": "bogus"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_delete_week_removes_it(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/delete", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Deleted Week 1", response.data)
+
+        missing = self.client.get("/week/1")
+        self.assertEqual(missing.status_code, 404)
+
+    def test_delete_unknown_week_flashes_message(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/week/999/delete", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
+    def test_regenerate_week_requires_valid_csrf_token(self):
+        self._generate_week()
+        response = self.client.post("/week/1/regenerate", data={"csrf_token": "bogus"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_regenerate_week_changes_content_but_keeps_index(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/regenerate", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Regenerated Week 1", response.data)
+        self.assertIn(b"Week 1", response.data)
+
+        history_response = self.client.get("/history")
+        self.assertIn(b'href="/week/1"', history_response.data)
+        self.assertNotIn(b'href="/week/2"', history_response.data)
+
+    def test_regenerate_unknown_week_flashes_message(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/week/999/regenerate", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()

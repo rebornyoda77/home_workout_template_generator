@@ -25,13 +25,18 @@ docstring and each exercise's `note` field):
 ## Usage
 
 ```bash
-python main.py                 # generate a 4-day week, save output + history
-python main.py --days 3        # generate a 3-day week
-python main.py --dry-run       # preview without writing files or history
-python main.py --seed 42       # reproducible output, for testing
+python main.py                          # generate a 4-day week (same as `generate`)
+python main.py --days 3                 # generate a 3-day week
+python main.py --dry-run                # preview without writing files or history
+python main.py --seed 42                # reproducible output, for testing
+
+python main.py list                     # list every generated week
+python main.py delete --week 3          # delete week 3
+python main.py regenerate --week 3      # reroll week 3's exercises, same slot/day count
+python main.py regenerate --week 3 --days 4   # ...and change its day count too
 ```
 
-Each run:
+Each `generate`/`regenerate` run:
 
 1. Picks a set of day templates (see below), rotating which template starts
    the week so the day-to-day flow varies week over week.
@@ -41,6 +46,12 @@ Each run:
 3. Writes the plan to `output/week-NN-YYYY-MM-DD.md` and updates
    `data/history.json` (the record the "don't repeat too often" logic reads
    on the next run).
+
+`regenerate` keeps the week's number (so its spot in `list`/the web history
+page doesn't move) but discards its old exercises before rerolling, so they
+don't count against the new pick's freshness. `delete` removes a week
+entirely and recomputes exercise-use stats from what's left, so a deleted
+week's exercises are free to reappear sooner than they otherwise would have.
 
 ## Day structure
 
@@ -79,11 +90,13 @@ python web_main.py --set-passcode   # first time only
 python web_main.py                  # runs at http://127.0.0.1:5050
 ```
 
-Pages: **Dashboard** (generate a new week, shows the latest one), **History**
-(every past week, linking to a full view of each). It shares the same
-`data/history.json` as the CLI, so weeks generated either way show up in
-both — generate from your phone over the week, or from the terminal, and
-either sees what the other did. Set `--host 0.0.0.0` (behind something like
+Pages: **Dashboard** (generate a new week, shows the latest one, with
+Regenerate/Delete buttons), **History** (every past week, with a View link
+and a Delete button per row, and a link into each week's own page which also
+has Regenerate/Delete). It shares the same `data/history.json` as the CLI,
+so weeks generated, deleted, or regenerated either way show up on both —
+manage it from your phone over the week, or from the terminal, and either
+sees what the other did. Set `--host 0.0.0.0` (behind something like
 Tailscale, not open to the internet) to reach it from another device.
 
 ## Project layout

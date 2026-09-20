@@ -17,8 +17,23 @@
 </form>
 
 {% if latest_week %}
-<h1 style="margin-top: 36px;">Latest: Week {{ latest_week.week_index }}</h1>
+<h1 style="margin-top: 36px;"><a href="{{ url_for('view_week', week_index=latest_week.week_index) }}">Latest: Week {{ latest_week.week_index }}</a></h1>
 <p class="meta">Generated {{ latest_week.generated_at }} — <a href="{{ url_for('history_page') }}">view all weeks</a></p>
+
+<div class="week-actions">
+  <form method="post" action="{{ url_for('regenerate_week_route', week_index=latest_week.week_index) }}" class="inline-form"
+        onsubmit="return confirm('Regenerate Week {{ latest_week.week_index }}? This replaces its exercises with a fresh set.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="days" value="{{ latest_week.days | length }}">
+    <button type="submit" class="button">Regenerate This Week</button>
+  </form>
+  <form method="post" action="{{ url_for('delete_week_route', week_index=latest_week.week_index) }}" class="inline-form"
+        onsubmit="return confirm('Delete Week {{ latest_week.week_index }}? This can\'t be undone.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="button danger-button">Delete This Week</button>
+  </form>
+</div>
+
 {% with week = latest_week %}
 {% include "_week_days.html" %}
 {% endwith %}
