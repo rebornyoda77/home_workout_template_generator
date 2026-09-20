@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Week {{ week.week_index }} — Workout Generator{% endblock %}
+{% block content %}
+<h1>Week {{ week.week_index }}</h1>
+<p class="meta">Generated {{ week.generated_at }} — <a href="{{ url_for('history_page') }}">all weeks</a> · <a href="{{ url_for('dashboard') }}">generate a new one</a></p>
+{% include "_week_days.html" %}
+{% endblock %}

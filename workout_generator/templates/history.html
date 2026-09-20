@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}History — Workout Generator{% endblock %}
+{% block content %}
+<h1>Week History</h1>
+{% if weeks %}
+<table>
+<tr><th>Week</th><th>Generated</th><th>Days</th><th></th></tr>
+{% for w in weeks %}
+<tr>
+  <td>{{ w.week_index }}</td>
+  <td>{{ w.generated_at }}</td>
+  <td>{{ w.days | map(attribute='title') | join(', ') }}</td>
+  <td><a href="{{ url_for('view_week', week_index=w.week_index) }}" class="button">View</a></td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="empty">No weeks generated yet. <a href="{{ url_for('dashboard') }}">Generate your first one</a>.</p>
+{% endif %}
+{% endblock %}

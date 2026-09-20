@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Workout Generator{% endblock %}
+{% block content %}
+<h1>Generate a Week</h1>
+<p class="meta">Home equipment only: kettlebells, dumbbells, bands, bench, treadmill, boxing bag, mats.</p>
+
+<form method="post" action="{{ url_for('generate') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Days this week</label>
+  <div class="radio-row">
+    <label><input type="radio" name="days" value="3"> 3 days</label>
+    <label><input type="radio" name="days" value="4" checked> 4 days</label>
+  </div>
+  <label for="avoid_weeks">Avoid repeats used within the last N weeks</label>
+  <input type="number" id="avoid_weeks" name="avoid_weeks" value="2" min="0" max="10">
+  <button type="submit" class="save-button">Generate Next Week</button>
+</form>
+
+{% if latest_week %}
+<h1 style="margin-top: 36px;">Latest: Week {{ latest_week.week_index }}</h1>
+<p class="meta">Generated {{ latest_week.generated_at }} — <a href="{{ url_for('history_page') }}">view all weeks</a></p>
+{% with week = latest_week %}
+{% include "_week_days.html" %}
+{% endwith %}
+{% else %}
+<p class="empty">No weeks generated yet. Use the form above to build your first one.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><title>Workout Generator — Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f3f4f7">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23ff6a13'/%3E%3Ctext x='50' y='69' font-size='58' font-family='Arial, sans-serif' font-weight='700' fill='white' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f3f4f7; color: #1c2126; min-height: 100vh; margin: 0;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .card {
+    width: 100%; max-width: 340px; background: #fff; border: 1px solid #e4e6ea; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.08); padding: 32px 28px;
+  }
+  .icon {
+    width: 44px; height: 44px; border-radius: 12px; background: #ff6a13; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700;
+    margin: 0 auto 16px;
+  }
+  h1 { font-size: 18px; font-weight: 700; text-align: center; margin: 0 0 22px; letter-spacing: -.01em; }
+  input {
+    width: 100%; padding: 11px 12px; font-size: 16px; margin: 0 0 14px; box-sizing: border-box;
+    border: 1px solid #d3d6dc; border-radius: 8px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: #ff6a13; box-shadow: 0 0 0 3px #fff1e6; }
+  button {
+    width: 100%; padding: 11px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: #ff6a13; border: 1px solid #ff6a13; border-radius: 8px; color: #fff;
+    box-shadow: 0 1px 2px rgba(255,106,19,.35); font-family: inherit;
+  }
+  button:hover { background: #e05a0a; border-color: #e05a0a; }
+  .error { color: #c22b3a; background: #fbe7e9; padding: 9px 12px; border-radius: 7px; font-size: 13.5px; margin: 0 0 14px; }
+</style>
+</head><body>
+<div class="card">
+  <div class="icon">W</div>
+  <h1>Workout Generator</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post">
+    <input type="password" name="passcode" placeholder="Passcode" autofocus required>
+    <button type="submit">Log In</button>
+  </form>
+</div>
+</body></html>

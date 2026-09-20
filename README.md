@@ -63,6 +63,25 @@ Four day templates rotate through the week (`Lower-Body Power & Push`,
 pairs so a 3- or 4-day week stays varied. See
 `workout_generator/day_builder.py` for the exact pattern assignments.
 
+## Web interface
+
+A small Flask app (styled like the budget tool's web interface: single
+passcode gate, no accounts) lets you generate and browse weeks from a
+browser instead of the CLI.
+
+```bash
+pip install -r requirements.txt
+python web_main.py --set-passcode   # first time only
+python web_main.py                  # runs at http://127.0.0.1:5050
+```
+
+Pages: **Dashboard** (generate a new week, shows the latest one), **History**
+(every past week, linking to a full view of each). It shares the same
+`data/history.json` as the CLI, so weeks generated either way show up in
+both — generate from your phone over the week, or from the terminal, and
+either sees what the other did. Set `--host 0.0.0.0` (behind something like
+Tailscale, not open to the internet) to reach it from another device.
+
 ## Project layout
 
 ```
@@ -73,13 +92,19 @@ workout_generator/
   day_builder.py    day templates + assembling one day's blocks
   week_builder.py  picks day templates and assembles a full week
   formatter.py     renders a generated week to Markdown
+  generate.py      shared "build a week + persist it" logic (CLI + web)
   cli.py           argparse CLI (see main.py)
+  web_config.py    web passcode storage (data/web_config.json)
+  web_server.py    Flask app (see web_main.py)
+  templates/       Jinja2 templates for the web interface
 data/
-  history.json     generated at runtime; tracks exercise-use history
+  history.json      generated at runtime; tracks exercise-use history
+  web_config.json    generated at runtime; hashed web passcode
 output/
   week-*.md        generated weekly plans
 tests/
   test_generator.py
+  test_web.py
 ```
 
 ## Tests

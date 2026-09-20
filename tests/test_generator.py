@@ -1,3 +1,4 @@
+import json
 import random
 import tempfile
 import unittest
@@ -137,6 +138,22 @@ class WeekBuilderTests(unittest.TestCase):
             build_week(2, history)
         with self.assertRaises(ValueError):
             build_week(5, history)
+
+    def test_recorded_week_is_json_serializable_and_lookupable(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(11), generated_at="2026-09-20")
+
+        stored = history.week_by_index(week["week_index"])
+        self.assertIsNotNone(stored)
+        json.dumps(stored)  # must not raise -- everything is plain dict/list/str
+
+        self.assertEqual(len(stored["days"]), 4)
+        first_exercise = stored["days"][0]["blocks"][0]["exercises"][0]
+        self.assertIsInstance(first_exercise, dict)
+        self.assertIn("name", first_exercise)
+        self.assertIn("load_hint", first_exercise)
+
+        self.assertIsNone(history.week_by_index(999))
 
 
 class CliTests(unittest.TestCase):

@@ -71,11 +71,17 @@ class History:
             self.last_used[name] = self.week_index
             self.use_count[name] = self.use_count.get(name, 0) + 1
 
-    def record_week(self, generated_at: str, day_titles) -> None:
+    def record_week(self, generated_at: str, days) -> None:
+        """`days` is the full serialized day list (see week_builder.serialize_day):
+        each entry has a title and its blocks (with exercises), not just a title,
+        so a past week can be redisplayed later without being regenerated."""
         self.weeks.append(
             {
                 "week_index": self.week_index,
                 "generated_at": generated_at,
-                "days": list(day_titles),
+                "days": list(days),
             }
         )
+
+    def week_by_index(self, week_index: int):
+        return next((w for w in self.weeks if w["week_index"] == week_index), None)

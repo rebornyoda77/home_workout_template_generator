@@ -1,0 +1,22 @@
+{% for day in week.days %}
+<div class="day-card">
+  <h2>Day {{ loop.index }}: {{ day.title }}</h2>
+  {% for block in day.blocks %}
+  <div class="block">
+    <h3>{{ block.title }}</h3>
+    <p class="block-structure">{{ block.structure }}</p>
+    <ul class="exercise-list">
+      {% for exercise in block.exercises %}
+      <li>
+        <span>
+          <span class="exercise-name">{{ exercise.name }}{{ ' (each side)' if exercise.unilateral else '' }}</span>
+          {% if exercise.note %}<span class="exercise-note">{{ exercise.note }}</span>{% endif %}
+        </span>
+        <span class="exercise-load">{{ exercise.load_hint }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
