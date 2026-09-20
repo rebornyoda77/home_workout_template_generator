@@ -193,6 +193,21 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b'data-search="goblet squat', response.data.lower())
         self.assertIn(b"Hike a kettlebell back between the legs", response.data)
 
+    def test_glossary_shows_never_used_before_any_week_is_generated(self):
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertIn(b"Never used", response.data)
+        self.assertNotIn(b"Used ", response.data)
+
+    def test_glossary_shows_use_count_and_last_used_week_after_generating(self):
+        self._generate_week()
+        response = self.client.get("/glossary")
+        self.assertIn(b"Used 1x", response.data)
+        self.assertIn(b"last Week 1", response.data)
+        # some patterns (e.g. calves, with only 1 exercise not used by every
+        # template) may still show "Never used" for at least one exercise
+        self.assertIn(b"Never used", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()

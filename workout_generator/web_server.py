@@ -180,10 +180,18 @@ def create_app(
 
     @app.route("/glossary")
     def glossary():
-        groups = [
-            {"key": pattern, "label": ex_pool.PATTERN_LABELS[pattern], "exercises": ex_pool.by_pattern(pattern)}
-            for pattern in ex_pool.ALL_PATTERNS
-        ]
+        history = History.load(app.config["HISTORY_PATH"])
+        groups = []
+        for pattern in ex_pool.ALL_PATTERNS:
+            entries = [
+                {
+                    "exercise": exercise,
+                    "last_used_week": history.last_used.get(exercise.name),
+                    "use_count": history.use_count.get(exercise.name, 0),
+                }
+                for exercise in ex_pool.by_pattern(pattern)
+            ]
+            groups.append({"key": pattern, "label": ex_pool.PATTERN_LABELS[pattern], "exercises": entries})
         return render_template("glossary.html", active_page="glossary", groups=groups)
 
     return app

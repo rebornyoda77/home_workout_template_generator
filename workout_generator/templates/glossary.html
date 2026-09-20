@@ -19,7 +19,8 @@
 {% for group in groups %}
 <div class="glossary-group" id="{{ group.key }}">
   <h2>{{ group.label }}</h2>
-  {% for exercise in group.exercises %}
+  {% for entry in group.exercises %}
+  {% set exercise = entry.exercise %}
   <div class="glossary-item"
        data-search="{{ (exercise.name ~ ' ' ~ exercise.description ~ ' ' ~ (exercise.equipment | join(' ')) ~ ' ' ~ group.label ~ ' ' ~ exercise.note) | lower }}">
     <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
@@ -28,6 +29,11 @@
       <span class="tag">{{ exercise.equipment | join(', ') | capitalize if exercise.equipment else 'Bodyweight' }}</span>
       <span class="tag">{{ exercise.load_hint }}</span>
       {% if exercise.note %}<span class="tag tag-note">{{ exercise.note }}</span>{% endif %}
+      {% if entry.use_count > 0 %}
+      <span class="tag tag-usage">Used {{ entry.use_count }}x — last Week {{ entry.last_used_week }}</span>
+      {% else %}
+      <span class="tag tag-usage">Never used</span>
+      {% endif %}
     </p>
   </div>
   {% endfor %}
