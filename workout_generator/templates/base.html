@@ -115,6 +115,20 @@
     .panel { padding: 16px; }
     .exercise-list li { flex-direction: column; gap: 0; }
   }
+  @media print {
+    .no-print, header.topbar, .week-actions, .flash, .search-bar, .glossary-toc { display: none !important; }
+    body { background: #fff; }
+    main.content-wrap { padding: 0; max-width: 100%; }
+    .panel { box-shadow: none; border: none; padding: 0; }
+    h1 { color: #000; }
+    h1 a { color: #000; text-decoration: none; }
+    .meta { color: #333; }
+    .day-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+    .block-structure { color: #333; }
+    .exercise-load, .exercise-note { color: #333; }
+    a { color: inherit; text-decoration: none; }
+    .tag { border: 1px solid #999; background: none; color: #333; }
+  }
 </style>
 </head>
 <body>

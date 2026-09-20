@@ -86,6 +86,20 @@ class WebServerTests(unittest.TestCase):
         missing = self.client.get("/week/999")
         self.assertEqual(missing.status_code, 404)
 
+    def test_week_page_has_a_print_button(self):
+        self._generate_week()
+        response = self.client.get("/week/1")
+        self.assertIn(b'onclick="window.print()"', response.data)
+        self.assertIn(b"Print This Week", response.data)
+
+    def test_dashboard_print_button_excludes_the_generate_form_from_print(self):
+        self._generate_week()
+        response = self.client.get("/")
+        self.assertIn(b'onclick="window.print()"', response.data)
+        # the generate form must be wrapped so it's hidden by the @media print rule,
+        # not left sitting on top of the printed week
+        self.assertIn(b'<div class="no-print">', response.data)
+
     def test_logout_returns_to_login(self):
         self._login()
         response = self.client.get("/logout", follow_redirects=True)

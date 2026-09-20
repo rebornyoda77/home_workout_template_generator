@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Workout Generator{% endblock %}
 {% block content %}
+<div class="no-print">
 <h1>Generate a Week</h1>
 <p class="meta">Home equipment only: kettlebells, dumbbells, bands, bench, treadmill, boxing bag, mats.</p>
 
@@ -15,6 +16,7 @@
   <input type="number" id="avoid_weeks" name="avoid_weeks" value="2" min="0" max="10">
   <button type="submit" class="save-button">Generate Next Week</button>
 </form>
+</div>
 
 {% if latest_week %}
 <h1 style="margin-top: 36px;"><a href="{{ url_for('view_week', week_index=latest_week.week_index) }}">Latest: Week {{ latest_week.week_index }}</a></h1>
@@ -32,6 +34,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" class="button danger-button">Delete This Week</button>
   </form>
+  <button type="button" class="button" onclick="window.print()">Print This Week</button>
 </div>
 
 {% with week = latest_week %}
