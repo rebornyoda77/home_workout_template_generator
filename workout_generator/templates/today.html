@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Day {{ day_number }}: {{ day.title }} — Workout Generator{% endblock %}
+{% block content %}
+<div class="today-view">
+<p class="meta">
+  <a href="{{ url_for('view_week', week_index=week.week_index) }}">&larr; Week {{ week.week_index }} (all days)</a>
+</p>
+<h1>Day {{ day_number }} of {{ total_days }}: {{ day.title }}{% if day.completed %} <span class="tag tag-completed">Completed</span>{% endif %}</h1>
+
+<div class="today-nav no-print">
+  {% if prev_day_index is not none %}
+  <a href="{{ url_for('today_day', week_index=week.week_index, day_index=prev_day_index) }}" class="button">&larr; Previous Day</a>
+  {% endif %}
+  {% if next_day_index is not none %}
+  <a href="{{ url_for('today_day', week_index=week.week_index, day_index=next_day_index) }}" class="button">Next Day &rarr;</a>
+  {% endif %}
+</div>
+
+<form method="post" action="{{ url_for('log_day_route', week_index=week.week_index, day_index=day_index) }}" class="log-form today-log-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="next" value="today">
+  <label class="log-complete-toggle">
+    <input type="checkbox" name="completed" {{ 'checked' if day.completed }}> Mark this day complete
+  </label>
+
+  {% for block in day.blocks %}
+  {% set block_index = loop.index0 %}
+  <div class="block today-block">
+    <h2>{{ block.title }}</h2>
+    <p class="block-structure">{{ block.structure }}</p>
+    <ul class="exercise-list today-exercise-list">
+      {% for exercise in block.exercises %}
+      <li>
+        <div class="exercise-row">
+          <span>
+            <span class="exercise-name">{{ exercise.name }}{{ ' (each side)' if exercise.unilateral else '' }}</span>
+            {% if exercise.note %}<span class="exercise-note">{{ exercise.note }}</span>{% endif %}
+          </span>
+          <span class="exercise-load">{{ exercise.load_hint }}</span>
+        </div>
+        {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}
+        {% if suggestion %}<p class="exercise-suggestion">{{ suggestion }}</p>{% endif %}
+        <div class="log-row">
+          <input type="text" class="log-actual" name="actual_b{{ block_index }}_e{{ loop.index0 }}"
+                 placeholder="What did you actually do?" value="{{ exercise.actual }}">
+          <select class="log-feel" name="feel_b{{ block_index }}_e{{ loop.index0 }}">
+            <option value="" {{ 'selected' if not exercise.feel }}>Feel...</option>
+            <option value="easy" {{ 'selected' if exercise.feel == 'easy' }}>Too easy</option>
+            <option value="right" {{ 'selected' if exercise.feel == 'right' }}>Just right</option>
+            <option value="hard" {{ 'selected' if exercise.feel == 'hard' }}>Too hard</option>
+          </select>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+
+  <label for="today_notes">Notes</label>
+  <textarea id="today_notes" name="notes" rows="3" placeholder="How'd it go?">{{ day.notes }}</textarea>
+  <button type="submit" class="button save-button">Save Log</button>
+</form>
+</div>
+{% endblock %}

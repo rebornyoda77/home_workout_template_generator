@@ -251,7 +251,40 @@ def create_app(
             completed=completed, notes=notes, exercise_logs=exercise_logs,
         )
         flash(f"Saved log for Day {day_index + 1}.")
+        if request.form.get("next") == "today":
+            return redirect(url_for("today_day", week_index=week_index, day_index=day_index))
         return redirect(url_for("view_week", week_index=week_index))
+
+    @app.route("/today")
+    def today():
+        history = History.load(app.config["HISTORY_PATH"])
+        if not history.weeks:
+            flash("No weeks generated yet.")
+            return redirect(url_for("dashboard"))
+        latest = history.weeks[-1]
+        day_index = next((i for i, d in enumerate(latest["days"]) if not d.get("completed")), 0)
+        return redirect(url_for("today_day", week_index=latest["week_index"], day_index=day_index))
+
+    @app.route("/week/<int:week_index>/day/<int:day_index>/today")
+    def today_day(week_index: int, day_index: int):
+        history = History.load(app.config["HISTORY_PATH"])
+        entry = history.week_by_index(week_index)
+        if entry is None or not (0 <= day_index < len(entry["days"])):
+            return "That day doesn't exist.", 404
+
+        day = entry["days"][day_index]
+        total_days = len(entry["days"])
+        day_suggestions = {
+            exercise["name"]: suggestion_for(history.last_log(exercise["name"]))
+            for block in day["blocks"] for exercise in block["exercises"]
+        }
+        return render_template(
+            "today.html", active_page="today", week=entry, day=day, day_index=day_index,
+            day_number=day_index + 1, total_days=total_days,
+            prev_day_index=(day_index - 1 if day_index > 0 else None),
+            next_day_index=(day_index + 1 if day_index < total_days - 1 else None),
+            suggestions=day_suggestions, csrf_token=_new_csrf_token(),
+        )
 
     @app.route("/history")
     def history_page():

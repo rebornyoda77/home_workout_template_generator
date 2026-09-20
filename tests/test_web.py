@@ -351,6 +351,61 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"20 lb x10", response.data)
         self.assertIn(b"repeat this before increasing", response.data)
 
+    def test_today_redirects_to_login_when_unauthenticated(self):
+        response = self.client.get("/today")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_today_redirects_to_dashboard_when_nothing_generated(self):
+        self._login()
+        response = self.client.get("/today", follow_redirects=True)
+        self.assertIn(b"No weeks generated yet", response.data)
+
+    def test_today_redirects_to_first_day_of_latest_week(self):
+        self._generate_week()
+        response = self.client.get("/today")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/week/1/day/0/today", response.headers["Location"])
+
+    def test_today_skips_completed_days(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post("/week/1/day/0/log", data={"csrf_token": csrf, "completed": "on"})
+
+        response = self.client.get("/today")
+        self.assertIn("/week/1/day/1/today", response.headers["Location"])
+
+    def test_today_day_view_shows_day_content_and_nav_links(self):
+        self._generate_week()
+        response = self.client.get("/week/1/day/0/today")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Day 1 of 4", response.data)
+        self.assertNotIn(b"Previous Day", response.data)  # first day, no prev
+        self.assertIn(b"Next Day", response.data)
+        self.assertIn(b'name="completed"', response.data)
+
+    def test_today_day_view_404s_for_unknown_week_or_day(self):
+        self._generate_week()
+        self.assertEqual(self.client.get("/week/999/day/0/today").status_code, 404)
+        self.assertEqual(self.client.get("/week/1/day/999/today").status_code, 404)
+
+    def test_logging_from_today_view_stays_on_today_view(self):
+        self._generate_week()
+        today_response = self.client.get("/week/1/day/0/today")
+        csrf = self._csrf_from(today_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "next": "today", "completed": "on"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/week/1/day/0/today", response.headers["Location"])
+
+    def test_focus_mode_link_present_on_week_page(self):
+        response = self._generate_week()
+        self.assertIn(b"Open in Focus Mode", response.data)
+        self.assertIn(b'href="/week/1/day/0/today"', response.data)
+
 
 if __name__ == "__main__":
     unittest.main()

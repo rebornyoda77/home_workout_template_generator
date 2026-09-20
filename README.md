@@ -136,6 +136,14 @@ shown right next to it the next time it's scheduled, and on its Glossary
 entry. It's read-only guidance, not automatic: nothing here changes what
 the generator picks or the load_hint text on its own.
 
+**Today's Workout** (nav link, or `/today`) jumps straight to the latest
+week's first not-yet-completed day in **Focus Mode**: one day at a time,
+larger touch-friendly text, Previous/Next Day buttons, and the same log
+form -- meant for actually working through the plan on your phone rather
+than scrolling a full week. Any day-card also links into Focus Mode
+directly ("Open in Focus Mode"). Saving a log from there keeps you on that
+same day instead of bouncing to the full week view.
+
 The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what

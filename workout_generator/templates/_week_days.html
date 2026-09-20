@@ -1,6 +1,9 @@
 {% for day in week.days %}
 <div class="day-card">
   <h2>Day {{ loop.index }}: {{ day.title }}{% if day.completed %} <span class="tag tag-completed">Completed</span>{% endif %}</h2>
+  <p class="meta no-print" style="margin: -8px 0 14px;">
+    <a href="{{ url_for('today_day', week_index=week.week_index, day_index=loop.index0) }}">Open in Focus Mode &rarr;</a>
+  </p>
   <form method="post" action="{{ url_for('log_day_route', week_index=week.week_index, day_index=loop.index0) }}" class="log-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="log-complete-toggle">
