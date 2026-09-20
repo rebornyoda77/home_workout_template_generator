@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Glossary — Workout Generator{% endblock %}
+{% block content %}
+<h1>Exercise Glossary</h1>
+<p class="meta">Every exercise in the pool, grouped by movement pattern. Load hints assume the equipment on
+  hand: kettlebells (5/10/15 lb), dumbbells (5-30 lb), resistance bands, adjustable bench, treadmill, boxing
+  bag, yoga mats.</p>
+
+<nav class="glossary-toc">
+  {% for group in groups %}
+  <a href="#{{ group.key }}">{{ group.label }}</a>
+  {% endfor %}
+</nav>
+
+{% for group in groups %}
+<div class="glossary-group" id="{{ group.key }}">
+  <h2>{{ group.label }}</h2>
+  {% for exercise in group.exercises %}
+  <div class="glossary-item">
+    <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
+    {% if exercise.description %}<p class="glossary-description">{{ exercise.description }}</p>{% endif %}
+    <p class="glossary-meta">
+      <span class="tag">{{ exercise.equipment | join(', ') | capitalize if exercise.equipment else 'Bodyweight' }}</span>
+      <span class="tag">{{ exercise.load_hint }}</span>
+      {% if exercise.note %}<span class="tag tag-note">{{ exercise.note }}</span>{% endif %}
+    </p>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

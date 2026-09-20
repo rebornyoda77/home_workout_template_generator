@@ -155,6 +155,22 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertIn(b"doesn&#39;t exist", response.data)
 
+    def test_glossary_requires_login(self):
+        response = self.client.get("/glossary")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_glossary_lists_every_pattern_and_exercise(self):
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Exercise Glossary", response.data)
+        # spot-check a pattern label and a couple of exercises from different groups
+        self.assertIn(b"Boxing Bag", response.data)
+        self.assertIn(b"Goblet Squat", response.data)
+        self.assertIn(b"Jab-Cross Combo", response.data)
+        self.assertIn(b"Hike a kettlebell back between the legs", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()

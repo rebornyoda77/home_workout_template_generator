@@ -35,6 +35,17 @@ class ExercisePoolTests(unittest.TestCase):
         for pattern in used_patterns:
             self.assertTrue(ex_pool.by_pattern(pattern), f"No exercises for pattern {pattern}")
 
+    def test_every_exercise_has_a_glossary_description(self):
+        for exercise in ex_pool.EXERCISES:
+            self.assertTrue(
+                exercise.description and exercise.description.strip(),
+                f"{exercise.name} has no glossary description",
+            )
+
+    def test_every_pattern_has_a_glossary_label(self):
+        for pattern in ex_pool.ALL_PATTERNS:
+            self.assertIn(pattern, ex_pool.PATTERN_LABELS)
+
 
 class HistoryTests(unittest.TestCase):
     def test_unused_exercise_is_maximally_stale(self):

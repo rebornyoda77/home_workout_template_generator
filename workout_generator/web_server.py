@@ -11,6 +11,7 @@ from pathlib import Path
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 
+from . import exercises as ex_pool
 from . import web_config
 from .generate import DEFAULT_OUTPUT_DIR, delete_week, generate_week, regenerate_week
 from .history import DEFAULT_HISTORY_PATH, History
@@ -176,5 +177,13 @@ def create_app(
             "history.html", active_page="history", weeks=list(reversed(history.weeks)),
             csrf_token=_new_csrf_token(),
         )
+
+    @app.route("/glossary")
+    def glossary():
+        groups = [
+            {"key": pattern, "label": ex_pool.PATTERN_LABELS[pattern], "exercises": ex_pool.by_pattern(pattern)}
+            for pattern in ex_pool.ALL_PATTERNS
+        ]
+        return render_template("glossary.html", active_page="glossary", groups=groups)
 
     return app
