@@ -18,6 +18,7 @@ from .generate import (
     log_day, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
+from .progression import suggestion_for
 
 DEFAULT_PORT = 5050
 
@@ -40,6 +41,20 @@ def _pattern_options():
 
 def _parse_exclude_patterns(form) -> list:
     return [p for p in form.getlist("exclude_patterns") if p in ex_pool.ALL_PATTERNS]
+
+
+def _exercise_suggestions(history: History, week: dict) -> dict:
+    """name -> "last time" progression hint, for every exercise appearing
+    in this week -- computed once per page render rather than as a Jinja
+    filter so the (cheap, but O(weeks)) history.last_log scan runs once
+    per distinct exercise instead of once per template render call."""
+    names = {
+        exercise["name"]
+        for day in week["days"]
+        for block in day["blocks"]
+        for exercise in block["exercises"]
+    }
+    return {name: suggestion_for(history.last_log(name)) for name in names}
 
 
 def _flash_exclusion_violations(week: dict, excluded_patterns: list) -> None:
@@ -100,9 +115,10 @@ def create_app(
     def dashboard():
         history = History.load(app.config["HISTORY_PATH"])
         latest_week = history.weeks[-1] if history.weeks else None
+        suggestions = _exercise_suggestions(history, latest_week) if latest_week else {}
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
-            pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
+            suggestions=suggestions, pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
         )
 
     @app.route("/generate", methods=["POST"])
@@ -144,6 +160,7 @@ def create_app(
             return "That week hasn't been generated.", 404
         return render_template(
             "week.html", active_page="weeks", week=entry,
+            suggestions=_exercise_suggestions(history, entry),
             pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
         )
 
@@ -254,6 +271,7 @@ def create_app(
                     "exercise": exercise,
                     "last_used_week": history.last_used.get(exercise.name),
                     "use_count": history.use_count.get(exercise.name, 0),
+                    "suggestion": suggestion_for(history.last_log(exercise.name)),
                 }
                 for exercise in ex_pool.by_pattern(pattern)
             ]

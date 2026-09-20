@@ -305,6 +305,52 @@ class WebServerTests(unittest.TestCase):
         missing_day = self.client.post("/week/1/day/999/log", data={"csrf_token": csrf})
         self.assertEqual(missing_day.status_code, 404)
 
+    def test_no_suggestion_shown_before_anything_is_logged(self):
+        response = self._generate_week()
+        self.assertNotIn(b'class="exercise-suggestion"', response.data)
+
+    def test_logged_exercise_suggestion_appears_next_time_it_is_scheduled(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        first_exercise_name = re.search(
+            rb'<span class="exercise-name">([^<]+?)(?: \(each side\))?</span>', week_response.data,
+        ).group(1).decode()
+
+        self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "easy"},
+            follow_redirects=True,
+        )
+
+        # generate a second week -- if that same exercise gets picked again,
+        # its suggestion (built from the week-1 log) should show up next to it
+        dashboard = self.client.get("/")
+        csrf2 = self._csrf_from(dashboard)
+        self.client.post(
+            "/generate", data={"days": "4", "avoid_weeks": "0", "csrf_token": csrf2}, follow_redirects=True,
+        )
+
+        week2 = self.client.get("/week/2")
+        if first_exercise_name.encode() in week2.data:
+            self.assertIn(b'class="exercise-suggestion"', week2.data)
+            self.assertIn(b"20 lb x10", week2.data)
+            self.assertIn(b"heavier", week2.data)
+
+    def test_glossary_shows_suggestion_after_logging(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "hard"},
+            follow_redirects=True,
+        )
+
+        response = self.client.get("/glossary")
+        self.assertIn(b"20 lb x10", response.data)
+        self.assertIn(b"repeat this before increasing", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()

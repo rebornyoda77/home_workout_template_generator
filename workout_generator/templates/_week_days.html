@@ -21,6 +21,8 @@
             </span>
             <span class="exercise-load">{{ exercise.load_hint }}</span>
           </div>
+          {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}
+          {% if suggestion %}<p class="exercise-suggestion">{{ suggestion }}</p>{% endif %}
           <div class="log-row">
             <input type="text" class="log-actual" name="actual_b{{ block_index }}_e{{ loop.index0 }}"
                    placeholder="What did you actually do? (e.g. 20 lb x10)" value="{{ exercise.actual }}">

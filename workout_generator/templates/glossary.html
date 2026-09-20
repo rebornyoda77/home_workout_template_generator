@@ -35,6 +35,7 @@
       <span class="tag tag-usage">Never used</span>
       {% endif %}
     </p>
+    {% if entry.suggestion %}<p class="exercise-suggestion">{{ entry.suggestion }}</p>{% endif %}
   </div>
   {% endfor %}
 </div>

@@ -6,7 +6,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from workout_generator import blocks, exercises as ex_pool
+from workout_generator import blocks, exercises as ex_pool, progression
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
@@ -177,6 +177,84 @@ class HistoryTests(unittest.TestCase):
         # must not raise -- an out-of-range block/exercise index is just skipped
         updated = history.update_day_log(1, 0, exercise_logs={(999, 0): {"actual": "x"}, (0, 999): {"actual": "y"}})
         self.assertTrue(updated)  # the call itself still succeeds (week/day existed)
+
+    def test_last_log_returns_none_when_never_logged(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        self.assertIsNone(history.last_log("Goblet Squat"))
+
+    def test_last_log_finds_a_logged_occurrence(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"actual": "20 lb x10", "feel": "easy"}})
+
+        result = history.last_log(name)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["actual"], "20 lb x10")
+        self.assertEqual(result["feel"], "easy")
+        self.assertEqual(result["week_index"], 1)
+
+    def test_last_log_prefers_the_most_recent_week(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")  # week 2
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"actual": "old log", "feel": "hard"}})
+
+        # only log it in week 2 if that same exercise happens to appear there;
+        # otherwise just confirm week 1's log is still the one returned
+        found_in_week_2 = False
+        for di, day in enumerate(history.weeks[1]["days"]):
+            for bi, block in enumerate(day["blocks"]):
+                for ei, exercise in enumerate(block["exercises"]):
+                    if exercise["name"] == name:
+                        history.update_day_log(2, di, exercise_logs={(bi, ei): {"actual": "new log", "feel": "easy"}})
+                        found_in_week_2 = True
+
+        result = history.last_log(name)
+        if found_in_week_2:
+            self.assertEqual(result["actual"], "new log")
+            self.assertEqual(result["week_index"], 2)
+        else:
+            self.assertEqual(result["actual"], "old log")
+            self.assertEqual(result["week_index"], 1)
+
+    def test_last_log_ignores_scheduling_without_a_log(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-13")  # week 2, same seed
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        # log it only in week 1; week 2 (however it re-picks exercises) is never logged
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"actual": "logged here", "feel": "right"}})
+
+        result = history.last_log(name)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["week_index"], 1)  # not silently overridden by an unlogged week 2
+
+
+class ProgressionTests(unittest.TestCase):
+    def test_suggestion_for_none_is_empty(self):
+        self.assertEqual(progression.suggestion_for(None), "")
+        self.assertEqual(progression.suggestion_for({}), "")
+
+    def test_suggestion_for_includes_actual_and_feel(self):
+        text = progression.suggestion_for({"actual": "20 lb x10", "feel": "easy"})
+        self.assertIn("20 lb x10", text)
+        self.assertIn("heavier", text)
+
+    def test_suggestion_for_actual_only(self):
+        text = progression.suggestion_for({"actual": "20 lb x10", "feel": ""})
+        self.assertIn("20 lb x10", text)
+        self.assertNotIn("--", text.replace('"20 lb x10"', ""))  # no dangling separator with nothing after it
+
+    def test_suggestion_for_unknown_feel_value_is_ignored(self):
+        text = progression.suggestion_for({"actual": "20 lb x10", "feel": "sideways"})
+        self.assertIn("20 lb x10", text)
+        self.assertNotIn("sideways", text)
 
 
 class BackupTests(unittest.TestCase):

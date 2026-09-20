@@ -170,3 +170,20 @@ class History:
             if "feel" in log:
                 exercise["feel"] = log["feel"]
         return True
+
+    def last_log(self, exercise_name: str) -> dict:
+        """The most recent *logged* occurrence of this exercise -- one with
+        actual/feel actually filled in, not just scheduled -- most recent
+        week first. Returns None if it's never been logged. Used to surface
+        "last time" progression hints the next time this exercise comes up."""
+        for week in sorted(self.weeks, key=lambda w: w["week_index"], reverse=True):
+            for day in week["days"]:
+                for block in day["blocks"]:
+                    for exercise in block["exercises"]:
+                        if exercise.get("name") != exercise_name:
+                            continue
+                        actual = exercise.get("actual", "")
+                        feel = exercise.get("feel", "")
+                        if actual or feel:
+                            return {"week_index": week["week_index"], "actual": actual, "feel": feel}
+        return None

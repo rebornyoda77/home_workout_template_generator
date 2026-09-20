@@ -127,9 +127,14 @@ a "Mark this day complete" checkbox, a free-text "what did you actually do"
 + a quick "too easy / just right / too hard" pick per exercise, and a notes
 field -- "Save Log" persists it to that day's entry in `data/history.json`
 (also picked up by `python main.py list`/`backups`, and backed up like
-everything else). A completed day gets a badge next to its title. Nothing
-here feeds back into future generation yet -- it's the data future features
-(load suggestions, week ratings) will read.
+everything else). A completed day gets a badge next to its title.
+
+Once an exercise has been logged, its most recent "too easy/right/hard"
+rating turns into a plain-language suggestion for next time (e.g. `last
+time: "20 lb x10" -- felt easy -- try going heavier or adding reps`) --
+shown right next to it the next time it's scheduled, and on its Glossary
+entry. It's read-only guidance, not automatic: nothing here changes what
+the generator picks or the load_hint text on its own.
 
 The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
