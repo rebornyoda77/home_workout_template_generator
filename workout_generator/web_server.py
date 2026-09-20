@@ -15,7 +15,7 @@ from . import exercises as ex_pool
 from . import web_config
 from .generate import (
     DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
-    regenerate_week, resolve_excluded_names,
+    log_day, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
 
@@ -201,6 +201,39 @@ def create_app(
         week, _markdown, _out_path = result
         flash(f"Regenerated Week {week_index}.")
         _flash_exclusion_violations(week, excluded_patterns)
+        return redirect(url_for("view_week", week_index=week_index))
+
+    @app.route("/week/<int:week_index>/day/<int:day_index>/log", methods=["POST"])
+    def log_day_route(week_index: int, day_index: int):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        history = History.load(app.config["HISTORY_PATH"])
+        entry = history.week_by_index(week_index)
+        if entry is None or not (0 <= day_index < len(entry["days"])):
+            return "That day doesn't exist.", 404
+
+        day = entry["days"][day_index]
+        completed = request.form.get("completed") == "on"
+        notes = request.form.get("notes", "").strip()
+
+        exercise_logs = {}
+        for bi, block in enumerate(day["blocks"]):
+            for ei in range(len(block["exercises"])):
+                actual = request.form.get(f"actual_b{bi}_e{ei}")
+                feel = request.form.get(f"feel_b{bi}_e{ei}")
+                if actual is not None or feel is not None:
+                    exercise_logs[(bi, ei)] = {
+                        "actual": (actual or "").strip(),
+                        "feel": feel if feel in ("easy", "right", "hard") else "",
+                    }
+
+        log_day(
+            week_index, day_index,
+            history_path=app.config["HISTORY_PATH"],
+            completed=completed, notes=notes, exercise_logs=exercise_logs,
+        )
+        flash(f"Saved log for Day {day_index + 1}.")
         return redirect(url_for("view_week", week_index=week_index))
 
     @app.route("/history")

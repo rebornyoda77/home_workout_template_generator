@@ -116,6 +116,68 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(history.week_index, 3)
         self.assertEqual([w["week_index"] for w in history.weeks], [1, 3])
 
+    def test_new_weeks_seed_default_log_fields(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        stored = history.week_by_index(week["week_index"])
+
+        for day in stored["days"]:
+            self.assertEqual(day["completed"], False)
+            self.assertEqual(day["notes"], "")
+            for block in day["blocks"]:
+                for exercise in block["exercises"]:
+                    self.assertEqual(exercise["actual"], "")
+                    self.assertEqual(exercise["feel"], "")
+
+    def test_update_day_log_sets_completed_and_notes(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        updated = history.update_day_log(1, 0, completed=True, notes="felt great")
+        self.assertTrue(updated)
+
+        day = history.week_by_index(1)["days"][0]
+        self.assertTrue(day["completed"])
+        self.assertEqual(day["notes"], "felt great")
+
+    def test_update_day_log_sets_per_exercise_actual_and_feel(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        updated = history.update_day_log(1, 0, exercise_logs={(0, 0): {"actual": "20 lb x10", "feel": "easy"}})
+        self.assertTrue(updated)
+
+        exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
+        self.assertEqual(exercise["actual"], "20 lb x10")
+        self.assertEqual(exercise["feel"], "easy")
+
+    def test_update_day_log_leaves_unspecified_fields_untouched(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True, notes="first pass")
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"actual": "25 lb x8"}})
+
+        day = history.week_by_index(1)["days"][0]
+        self.assertTrue(day["completed"])  # still set from the first call
+        self.assertEqual(day["notes"], "first pass")
+        self.assertEqual(day["blocks"][0]["exercises"][0]["actual"], "25 lb x8")
+
+    def test_update_day_log_returns_false_for_unknown_week_or_day(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        self.assertFalse(history.update_day_log(999, 0, completed=True))
+        self.assertFalse(history.update_day_log(1, 999, completed=True))
+
+    def test_update_day_log_ignores_out_of_range_exercise_indices(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        # must not raise -- an out-of-range block/exercise index is just skipped
+        updated = history.update_day_log(1, 0, exercise_logs={(999, 0): {"actual": "x"}, (0, 999): {"actual": "y"}})
+        self.assertTrue(updated)  # the call itself still succeeds (week/day existed)
+
 
 class BackupTests(unittest.TestCase):
     def test_no_backup_when_history_file_does_not_exist_yet(self):
@@ -358,6 +420,38 @@ class WeekBuilderTests(unittest.TestCase):
 
 
 class GenerateModuleTests(unittest.TestCase):
+    def test_log_day_persists_and_backs_up(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            week, _markdown, _out = generate_module.generate_week(4, history_path=history_path, seed=1)
+
+            updated = generate_module.log_day(
+                week["week_index"], 0, history_path=history_path,
+                completed=True, notes="good session",
+                exercise_logs={(0, 0): {"actual": "20 lb x10", "feel": "right"}},
+            )
+            self.assertTrue(updated)
+
+            reloaded = History.load(history_path)
+            day = reloaded.week_by_index(week["week_index"])["days"][0]
+            self.assertTrue(day["completed"])
+            self.assertEqual(day["notes"], "good session")
+            self.assertEqual(day["blocks"][0]["exercises"][0]["actual"], "20 lb x10")
+
+            backups = list((Path(tmp_dir) / "backups").glob("*.json"))
+            self.assertEqual(len(backups), 2)  # one from generate, one from logging
+
+    def test_log_day_returns_false_and_does_not_backup_for_unknown_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            generate_module.generate_week(4, history_path=history_path, seed=1)
+
+            updated = generate_module.log_day(999, 0, history_path=history_path, completed=True)
+            self.assertFalse(updated)
+
+            backups = list((Path(tmp_dir) / "backups").glob("*.json"))
+            self.assertEqual(len(backups), 1)  # only the one from generate
+
     def test_generate_week_creates_a_backup(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             history_path = Path(tmp_dir) / "history.json"

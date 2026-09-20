@@ -133,3 +133,40 @@ class History:
             self._recompute_aggregates()
             self.week_index = self._max_week_index()
         return removed
+
+    def update_day_log(
+        self,
+        week_index: int,
+        day_index: int,
+        *,
+        completed: bool = None,
+        notes: str = None,
+        exercise_logs: dict = None,
+    ) -> bool:
+        """Records what actually happened on one day of a generated week:
+        whether it was completed, free-text notes, and per-exercise "actual"
+        (what was really used, e.g. "20 lb x10") + "feel" (easy/right/hard).
+        Any argument left as None is left unchanged. `exercise_logs` maps
+        (block_index, exercise_index) -> {"actual": str, "feel": str}.
+        Returns True if the week/day existed and was updated."""
+        week = self.week_by_index(week_index)
+        if week is None or not (0 <= day_index < len(week["days"])):
+            return False
+
+        day = week["days"][day_index]
+        if completed is not None:
+            day["completed"] = completed
+        if notes is not None:
+            day["notes"] = notes
+        for (block_index, exercise_index), log in (exercise_logs or {}).items():
+            if not (0 <= block_index < len(day["blocks"])):
+                continue
+            exercises = day["blocks"][block_index]["exercises"]
+            if not (0 <= exercise_index < len(exercises)):
+                continue
+            exercise = exercises[exercise_index]
+            if "actual" in log:
+                exercise["actual"] = log["actual"]
+            if "feel" in log:
+                exercise["feel"] = log["feel"]
+        return True

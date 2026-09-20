@@ -120,8 +120,18 @@ uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a
 collapsible "Exclude movement patterns" checkbox list for benching a
-pattern for the week (see `--exclude-pattern` above). The
-generator pages share the same `data/history.json` as the CLI, so weeks
+pattern for the week (see `--exclude-pattern` above).
+
+Every day on the Dashboard/week page also has a log form right under it:
+a "Mark this day complete" checkbox, a free-text "what did you actually do"
++ a quick "too easy / just right / too hard" pick per exercise, and a notes
+field -- "Save Log" persists it to that day's entry in `data/history.json`
+(also picked up by `python main.py list`/`backups`, and backed up like
+everything else). A completed day gets a badge next to its title. Nothing
+here feeds back into future generation yet -- it's the data future features
+(load suggestions, week ratings) will read.
+
+The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what
 the other did. Set `--host 0.0.0.0` (behind something like Tailscale, not

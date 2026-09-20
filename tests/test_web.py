@@ -243,6 +243,68 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Regenerated Week 1", response.data)
 
+    def test_week_page_has_logging_form_fields(self):
+        week_response = self._generate_week()
+        self.assertIn(b'name="completed"', week_response.data)
+        self.assertIn(b'name="notes"', week_response.data)
+        self.assertIn(b'name="actual_b0_e0"', week_response.data)
+        self.assertIn(b'name="feel_b0_e0"', week_response.data)
+
+    def test_log_day_requires_valid_csrf_token(self):
+        self._generate_week()
+        response = self.client.post("/week/1/day/0/log", data={"csrf_token": "bogus"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_log_day_saves_completion_notes_and_exercise_log(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={
+                "csrf_token": csrf,
+                "completed": "on",
+                "notes": "solid session",
+                "actual_b0_e0": "20 lb x10",
+                "feel_b0_e0": "right",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Saved log for Day 1", response.data)
+        self.assertIn(b"Completed", response.data)  # the day-card badge
+        self.assertIn(b"solid session", response.data)
+        self.assertIn(b"20 lb x10", response.data)
+
+    def test_log_day_unchecked_completed_box_clears_it(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "completed": "on"},
+            follow_redirects=True,
+        )
+
+        week_response2 = self.client.get("/week/1")
+        csrf2 = self._csrf_from(week_response2)
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf2},  # box not included -> unchecked
+            follow_redirects=True,
+        )
+        self.assertNotIn(b"Completed</span>", response.data)
+
+    def test_log_day_returns_404_for_unknown_week_or_day(self):
+        self._generate_week()
+        dashboard = self.client.get("/week/1")
+        csrf = self._csrf_from(dashboard)
+
+        missing_week = self.client.post("/week/999/day/0/log", data={"csrf_token": csrf})
+        self.assertEqual(missing_week.status_code, 404)
+
+        missing_day = self.client.post("/week/1/day/999/log", data={"csrf_token": csrf})
+        self.assertEqual(missing_day.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

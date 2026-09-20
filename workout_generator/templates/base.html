@@ -51,11 +51,21 @@
   .block { margin-bottom: 14px; }
   .block-structure { color: var(--text-muted); font-size: 12.5px; font-style: italic; margin: 0 0 6px; }
   .exercise-list { list-style: none; margin: 0; padding: 0; }
-  .exercise-list li { padding: 5px 0; border-bottom: 1px dashed var(--border); font-size: 14px; display: flex; justify-content: space-between; gap: 10px; }
+  .exercise-list li { padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
   .exercise-list li:last-child { border-bottom: none; }
+  .exercise-row { display: flex; justify-content: space-between; gap: 10px; }
   .exercise-name { font-weight: 500; }
   .exercise-load { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
   .exercise-note { color: var(--text-muted); font-size: 11.5px; font-style: italic; display: block; }
+  .log-form label { margin-top: 4px; }
+  .log-complete-toggle { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .log-complete-toggle input { width: auto; }
+  .log-row { display: flex; gap: 6px; margin-top: 5px; }
+  .log-actual { flex: 2 1 auto; padding: 6px 9px; font-size: 12.5px; }
+  .log-feel { flex: 1 1 auto; padding: 6px 9px; font-size: 12.5px; max-width: 130px; }
+  .log-form textarea { width: 100%; padding: 9px 11px; font-size: 14px; font-family: inherit; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); resize: vertical; }
+  .log-form .button { margin-top: 12px; }
+  .tag-completed { color: var(--accent-hover); background: var(--accent-soft); border: 1px solid var(--accent-soft-border); border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; vertical-align: middle; }
   .search-bar { margin: 4px 0 20px; }
   .search-bar input { font-size: 15px; }
   .glossary-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 24px; }
@@ -120,7 +130,9 @@
   @media (max-width: 480px) {
     main.content-wrap { padding: 16px 12px 40px; }
     .panel { padding: 16px; }
-    .exercise-list li { flex-direction: column; gap: 0; }
+    .exercise-row { flex-direction: column; gap: 0; }
+    .log-row { flex-direction: column; }
+    .log-feel { max-width: none; }
   }
   @media print {
     .no-print, header.topbar, .week-actions, .flash, .search-bar, .glossary-toc { display: none !important; }
@@ -135,6 +147,9 @@
     .exercise-load, .exercise-note { color: #333; }
     a { color: inherit; text-decoration: none; }
     .tag { border: 1px solid #999; background: none; color: #333; }
+    /* the day's plan lives inside the log form, but the interactive
+       logging controls themselves have no place on a printed page */
+    .log-complete-toggle, .log-row, .log-form textarea, .log-form label, .log-form .button { display: none !important; }
   }
 </style>
 </head>

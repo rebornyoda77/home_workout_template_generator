@@ -85,6 +85,28 @@ def generate_week(
     return week, markdown, output_path
 
 
+def log_day(
+    week_index: int,
+    day_index: int,
+    *,
+    history_path: Path = DEFAULT_HISTORY_PATH,
+    completed: bool = None,
+    notes: str = None,
+    exercise_logs: dict = None,
+) -> bool:
+    """Records what actually happened on one day (completed, notes, and/or
+    per-exercise actual load + how it felt -- see History.update_day_log).
+    Returns True if the week/day existed and was updated."""
+    history = History.load(history_path)
+    updated = history.update_day_log(
+        week_index, day_index, completed=completed, notes=notes, exercise_logs=exercise_logs,
+    )
+    if updated:
+        history.save(history_path)
+        backup_history(history_path)
+    return updated
+
+
 def delete_week(
     week_index: int,
     *,
