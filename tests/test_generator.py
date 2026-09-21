@@ -918,6 +918,18 @@ class WeekBuilderTests(unittest.TestCase):
             self.assertEqual(day["blocks"][0]["type"], "warmup")
             self.assertEqual(day["blocks"][-1]["type"], "cooldown")
 
+    def test_every_day_patterns_matches_what_every_template_and_build_day_actually_guarantee(self):
+        # BAG is added unconditionally in build_day (not part of any template);
+        # every template's core finisher uses CORE_PAIR -- so together these
+        # are the patterns whose use_count reflects "how many days you've
+        # done" rather than a rotation choice (see web_server.py's /balance).
+        for template in DAY_TEMPLATES:
+            self.assertEqual(set(template["core_finisher_patterns"]), set(day_builder_module.CORE_PAIR))
+        self.assertEqual(
+            day_builder_module.EVERY_DAY_PATTERNS,
+            frozenset({ex_pool.BAG, ex_pool.CORE_FLEX, ex_pool.CORE_ANTI}),
+        )
+
     def test_warmup_and_cooldown_exercises_are_excluded_from_freshness_tracking(self):
         history = History()
         build_week(4, history, rng=random.Random(18), generated_at="2026-09-20")

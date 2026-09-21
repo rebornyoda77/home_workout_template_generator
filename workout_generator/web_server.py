@@ -14,6 +14,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 
 from . import exercises as ex_pool
 from . import users
+from .day_builder import EVERY_DAY_PATTERNS
 from .export import history_to_csv
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
@@ -414,5 +415,27 @@ def create_app(
             ]
             groups.append({"key": pattern, "label": ex_pool.PATTERN_LABELS[pattern], "exercises": entries})
         return render_template("glossary.html", active_page="glossary", groups=groups)
+
+    @app.route("/balance")
+    def balance():
+        history = History.load(_history_path())
+        rows = []
+        for pattern in ex_pool.ALL_PATTERNS:
+            count = sum(history.use_count.get(e.name, 0) for e in ex_pool.by_pattern(pattern))
+            rows.append({
+                "key": pattern,
+                "label": ex_pool.PATTERN_LABELS[pattern],
+                "count": count,
+                "every_day": pattern in EVERY_DAY_PATTERNS,
+            })
+        max_count = max((r["count"] for r in rows), default=0)
+        for r in rows:
+            r["pct"] = round(r["count"] / max_count * 100, 1) if max_count else 0
+        push_total = sum(r["count"] for r in rows if r["key"] in (ex_pool.PUSH_H, ex_pool.PUSH_V))
+        pull_total = sum(r["count"] for r in rows if r["key"] in (ex_pool.PULL_H, ex_pool.PULL_V))
+        return render_template(
+            "balance.html", active_page="balance", rows=rows, max_count=max_count,
+            push_total=push_total, pull_total=pull_total,
+        )
 
     return app

@@ -127,6 +127,20 @@
   }
   .tag-note { font-style: italic; }
   .tag-usage { color: var(--accent-hover); background: var(--accent-soft); border-color: var(--accent-soft-border); }
+  .balance-summary {
+    display: flex; align-items: baseline; justify-content: center; gap: 10px; margin: 4px 0 26px;
+    padding: 14px; background: var(--bg); border-radius: var(--radius-sm);
+  }
+  .balance-summary-label { font-size: 12.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+  .balance-summary-value { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .balance-summary-sep { font-size: 12px; color: var(--text-muted); }
+  .balance-chart { margin-top: 4px; }
+  .balance-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .balance-label { flex: 0 0 190px; font-size: 13px; color: var(--text); }
+  .balance-everyday-tag { margin-left: 4px; font-size: 10px; padding: 1px 7px; vertical-align: middle; }
+  .balance-track { flex: 1 1 auto; height: 14px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+  .balance-fill { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+  .balance-count { flex: 0 0 28px; text-align: right; font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   table { width: 100%; border-collapse: collapse; margin: 4px 0 8px; font-size: 14px; }
   th { background: var(--bg); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); text-align: left; padding: 10px; border-bottom: 1px solid var(--border-strong); }
   td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -195,6 +209,8 @@
     .exercise-load-input { width: 100%; text-align: left; margin-top: 2px; }
     .log-row { flex-direction: column; }
     .log-feel { max-width: none; }
+    .balance-label { flex-basis: 120px; font-size: 12px; }
+    .balance-everyday-tag { display: block; margin: 2px 0 0; width: fit-content; }
   }
   @media print {
     .no-print, header.topbar, .week-actions, .flash, .search-bar, .glossary-toc { display: none !important; }
@@ -226,6 +242,7 @@
   <a href="{{ url_for('today') }}" class="{{ 'active' if active_page == 'today' else '' }}">Today's Workout</a>
   <a href="{{ url_for('history_page') }}" class="{{ 'active' if active_page in ('history', 'weeks') else '' }}">History</a>
   <a href="{{ url_for('glossary') }}" class="{{ 'active' if active_page == 'glossary' else '' }}">Glossary</a>
+  <a href="{{ url_for('balance') }}" class="{{ 'active' if active_page == 'balance' else '' }}">Balance</a>
   <span class="spacer"></span>
   <span class="current-user">{{ current_display_name }}</span>
   <a href="{{ url_for('logout') }}">Log out</a>

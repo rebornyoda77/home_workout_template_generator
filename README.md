@@ -215,11 +215,17 @@ account by display name -- pick yourself and enter your password.
 
 Pages: **Dashboard** (generate a new week, shows the latest one, with
 Regenerate/Delete/Print buttons), **History** (every past week, with a View
-link and a Delete button per row, and a link into each week's own page which
-also has Regenerate/Delete/Print), and **Glossary** (every exercise in the
-pool, grouped by movement pattern, with a short how-to, equipment, and load
-hint for each, plus a live search box that filters by name/equipment/
-description as you type, and how often/recently each has been used). Print
+link and a Delete button per row, a link into each week's own page which
+also has Regenerate/Delete/Print, and an Export as CSV link), **Glossary**
+(every exercise in the pool, grouped by movement pattern, with a short
+how-to, equipment, and load hint for each, plus a live search box that
+filters by name/equipment/description as you type, and how often/recently
+each has been used), and **Balance** (a bar per movement pattern showing
+how many times it's appeared across every week you've generated, lifetime,
+plus a Push-vs-Pull total -- patterns that show up in every training day
+regardless of which templates get picked, like the core finisher and the
+bag round, are tagged "every day" so their bar isn't misread as a rotation
+choice). Print
 uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a

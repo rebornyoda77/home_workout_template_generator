@@ -431,6 +431,36 @@ class WebServerTests(unittest.TestCase):
         # template) may still show "Never used" for at least one exercise
         self.assertIn(b"Never used", response.data)
 
+    def test_balance_requires_login(self):
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_balance_shows_empty_state_before_any_week_is_generated(self):
+        self._login()
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No weeks generated yet", response.data)
+
+    def test_balance_shows_pattern_counts_after_generating(self):
+        self._generate_week()
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 200)
+        # every-day patterns show 4 (one per day, generated a 4-day week) and get tagged
+        self.assertIn(b'title="Boxing Bag: used 4 times"', response.data)
+        self.assertIn(b"every day", response.data)
+        # Push/Pull summary is present
+        self.assertIn(b"balance-summary", response.data)
+
+    def test_balance_is_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._generate_week()
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        response = self.client.get("/balance")
+        self.assertIn(b"No weeks generated yet", response.data)
+
     def test_dashboard_and_week_forms_offer_pattern_exclusion_checkboxes(self):
         dashboard = self._login()
         self.assertIn(b'name="exclude_patterns"', dashboard.data)

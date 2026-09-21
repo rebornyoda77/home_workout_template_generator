@@ -12,6 +12,14 @@ from .blocks import (
 
 CORE_PAIR = (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI)
 
+# Every day template uses CORE_PAIR for its core finisher, and every day gets
+# a Bag Finisher unconditionally (build_day below, not part of any template)
+# -- so these three patterns' use_count always tracks how many days you've
+# done, not a rotation/generator choice like the rest. See web_server.py's
+# /balance page, which flags them so a raw usage count doesn't misread them
+# as an imbalance.
+EVERY_DAY_PATTERNS = frozenset({ex_pool.BAG, *CORE_PAIR})
+
 # On a deload week, steer buy-outs away from Power/Plyo (the only pattern
 # high-impact enough to matter here -- see the templates below, it never
 # appears in Block A/B, the drop set, or the core finisher) toward the
