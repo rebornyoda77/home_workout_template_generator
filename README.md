@@ -115,7 +115,7 @@ history into `<target>`'s, landing as a brand-new week at the end of
 `<target>`'s own sequence (their own next week number, not necessarily
 `N`). It's for e.g. a spouse who wants to do the same exercises without
 generating their own random pick: completion, notes, and any logged
-actual/feel reset (it's a fresh plan for them), but each exercise's
+actual/feel/weight reset (it's a fresh plan for them), but each exercise's
 prescribed load carries over as-is, ready for them to retarget in the web
 UI. The copy is a fully independent snapshot from that moment -- editing
 either person's copy afterward, including its `load_hint`, never touches
@@ -139,7 +139,7 @@ anyone else's account.
 person's whole history into CSV, one row per exercise instance across
 every generated week -- week number/date/deload flag/rating, day
 number/title/completion/notes, block title/type/structure, and the
-exercise's own name/prescribed load/actual/feel -- for opening in a
+exercise's own name/prescribed load/weight/actual/feel -- for opening in a
 spreadsheet or charting elsewhere. Read-only: it never changes
 history.json. The web UI has the same export as a link on the History page.
 
@@ -236,8 +236,9 @@ link and a Delete button per row, a link into each week's own page which
 also has Regenerate/Delete/Print, and an Export as CSV link), **Glossary**
 (every exercise in the pool, grouped by movement pattern, with a short
 how-to, equipment, and load hint for each, plus a live search box that
-filters by name/equipment/description as you type, and how often/recently
-each has been used), and **Balance** (a bar per movement pattern showing
+filters by name/equipment/description as you type, how often/recently
+each has been used, and a "PR: N lb" tag once you've logged a weight for
+it), and **Balance** (a bar per movement pattern showing
 how many times it's appeared across every week you've generated, lifetime,
 plus a Push-vs-Pull total -- patterns that show up in every training day
 regardless of which templates get picked, like the core finisher and the
@@ -260,12 +261,20 @@ Every day on the Dashboard/week page also has a log form right under it:
 a "Mark this day complete" checkbox, an editable prescribed-load field per
 exercise (click the load text next to its name, e.g. "2x DB, 15-25 lb
 each", and type -- see `copy`/load_hint above for why this is safe to
-change), a free-text "what did you actually do" + a quick "too easy / just
-right / too hard" pick per exercise, and a notes field -- "Save Log"
-persists it all to that day's entry in your account's own `history.json`
-(also picked up by `python main.py list --user <name>`/`backups`, and
-backed up like everything else). A completed day gets a badge next to its
-title.
+change), a numeric weight field, a free-text reps/notes field + a quick
+"too easy / just right / too hard" pick per exercise, and a day-level notes
+field -- "Save Log" persists it all to that day's entry in your account's
+own `history.json` (also picked up by `python main.py list --user
+<name>`/`backups`, and backed up like everything else). A completed day
+gets a badge next to its title.
+
+The weight field is kept separate from the free-text reps/notes field
+specifically so PRs can be tracked reliably -- a number typed there is
+compared against the heaviest weight you've ever logged for that exercise,
+across every week, and a new high gets a "New PR: <exercise> at N lb!"
+flash on save. It's optional and per-exercise: leave it blank and nothing
+changes. The current best for each exercise also shows up as a "PR: N lb"
+tag on its Glossary entry.
 
 The first time you mark a day complete, it's stamped with today's date --
 once there's at least one, the Dashboard shows a small streak panel above

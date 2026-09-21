@@ -109,8 +109,8 @@ def copy_week(
     that's a plain per-week-copy edit, so it never touches the source
     account's own week or the shared exercise pool).
 
-    Completion/logging fields (completed, notes, actual, feel) are reset,
-    since this is a fresh plan for the target, not something they've
+    Completion/logging fields (completed, notes, actual, feel, weight) are
+    reset, since this is a fresh plan for the target, not something they've
     already done -- but load_hint (the prescribed load) carries over
     as-is, since that's the whole point of copying someone else's plan.
     The target's own freshness/staleness tracking is updated too, exactly
@@ -134,6 +134,7 @@ def copy_week(
             for exercise in block["exercises"]:
                 exercise["actual"] = ""
                 exercise["feel"] = ""
+                exercise["weight"] = ""
 
     target_history = History.load(target_history_path)
     week_index = target_history.begin_week()

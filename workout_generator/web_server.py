@@ -328,18 +328,32 @@ def create_app(
         notes = request.form.get("notes", "").strip()
 
         exercise_logs = {}
+        new_prs = []
         for bi, block in enumerate(day["blocks"]):
-            for ei in range(len(block["exercises"])):
+            for ei, exercise in enumerate(block["exercises"]):
                 actual = request.form.get(f"actual_b{bi}_e{ei}")
                 feel = request.form.get(f"feel_b{bi}_e{ei}")
+                weight = request.form.get(f"weight_b{bi}_e{ei}")
                 load_hint = request.form.get(f"load_b{bi}_e{ei}")
-                if actual is None and feel is None and load_hint is None:
+                if actual is None and feel is None and weight is None and load_hint is None:
                     continue
                 log = {}
                 if actual is not None:
                     log["actual"] = actual.strip()
                 if feel is not None:
                     log["feel"] = feel if feel in ("easy", "right", "hard") else ""
+                if weight is not None:
+                    weight = weight.strip()
+                    log["weight"] = weight
+                    if weight:
+                        try:
+                            weight_val = float(weight)
+                        except ValueError:
+                            weight_val = None
+                        if weight_val is not None:
+                            prior_best = history.best_weight(exercise["name"])
+                            if prior_best is None or weight_val > prior_best:
+                                new_prs.append((exercise["name"], weight_val))
                 if load_hint is not None:
                     log["load_hint"] = load_hint.strip()
                 exercise_logs[(bi, ei)] = log
@@ -350,6 +364,8 @@ def create_app(
             completed=completed, notes=notes, exercise_logs=exercise_logs,
         )
         flash(f"Saved log for Day {day_index + 1}.")
+        for name, weight_val in new_prs:
+            flash(f"New PR: {name} at {weight_val:g} lb!")
         if request.form.get("next") == "today":
             return redirect(url_for("today_day", week_index=week_index, day_index=day_index))
         return redirect(url_for("view_week", week_index=week_index))
@@ -413,6 +429,7 @@ def create_app(
                     "last_used_week": history.last_used.get(exercise.name),
                     "use_count": history.use_count.get(exercise.name, 0),
                     "suggestion": suggestion_for(history.last_log(exercise.name)),
+                    "best_weight": history.best_weight(exercise.name),
                 }
                 for exercise in ex_pool.by_pattern(pattern)
             ]

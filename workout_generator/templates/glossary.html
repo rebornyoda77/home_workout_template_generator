@@ -34,6 +34,9 @@
       {% else %}
       <span class="tag tag-usage">Never used</span>
       {% endif %}
+      {% if entry.best_weight is not none %}
+      <span class="tag tag-pr">PR: {{ '%g' | format(entry.best_weight) }} lb</span>
+      {% endif %}
     </p>
     {% if entry.suggestion %}<p class="exercise-suggestion">{{ entry.suggestion }}</p>{% endif %}
   </div>

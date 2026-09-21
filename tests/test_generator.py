@@ -155,6 +155,7 @@ class HistoryTests(unittest.TestCase):
                 for exercise in block["exercises"]:
                     self.assertEqual(exercise["actual"], "")
                     self.assertEqual(exercise["feel"], "")
+                    self.assertEqual(exercise["weight"], "")
 
     def test_update_day_log_sets_completed_and_notes(self):
         history = History()
@@ -177,6 +178,16 @@ class HistoryTests(unittest.TestCase):
         exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
         self.assertEqual(exercise["actual"], "20 lb x10")
         self.assertEqual(exercise["feel"], "easy")
+
+    def test_update_day_log_sets_per_exercise_weight(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        updated = history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "25"}})
+        self.assertTrue(updated)
+
+        exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
+        self.assertEqual(exercise["weight"], "25")
 
     def test_update_day_log_edits_the_prescribed_load_hint(self):
         history = History()
@@ -399,6 +410,57 @@ class HistoryTests(unittest.TestCase):
         result = history.last_log(name)
         self.assertIsNotNone(result)
         self.assertEqual(result["week_index"], 1)  # not silently overridden by an unlogged week 2
+
+    def test_best_weight_returns_none_when_never_logged(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        self.assertIsNone(history.best_weight("Goblet Squat"))
+
+    def test_best_weight_finds_a_logged_numeric_weight(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "20"}})
+
+        self.assertEqual(history.best_weight(name), 20.0)
+
+    def test_best_weight_ignores_non_numeric_weight_strings(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "heavy-ish"}})
+
+        self.assertIsNone(history.best_weight(name))
+
+    def test_best_weight_is_the_max_across_every_week(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-13")  # week 2, same seed
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "15"}})
+
+        # week 2 may not re-pick this exercise into the exact same (day, block, exercise)
+        # slot -- find wherever it actually landed, the same way test_last_log_prefers_the_most_recent_week does.
+        found_in_week_2 = False
+        for di, day in enumerate(history.weeks[1]["days"]):
+            for bi, block in enumerate(day["blocks"]):
+                for ei, exercise in enumerate(block["exercises"]):
+                    if exercise["name"] == name:
+                        history.update_day_log(2, di, exercise_logs={(bi, ei): {"weight": "25"}})
+                        found_in_week_2 = True
+
+        if not found_in_week_2:
+            self.assertEqual(history.best_weight(name), 15.0)
+            return
+
+        self.assertEqual(history.best_weight(name), 25.0)
+
+        # a later, lower weight never lowers the recorded best
+        history.update_day_log(2, di, exercise_logs={(bi, ei): {"weight": "10"}})
+        self.assertEqual(history.best_weight(name), 25.0)
 
     def test_rate_week_sets_and_clears_rating(self):
         history = History()
@@ -1468,7 +1530,9 @@ class CopyWeekTests(unittest.TestCase):
             generate_module.log_day(
                 week["week_index"], 0, history_path=source_path,
                 completed=True, notes="crushed it",
-                exercise_logs={(1, 0): {"actual": "25 lb x10", "feel": "easy", "load_hint": "1x DB, 25 lb"}},
+                exercise_logs={
+                    (1, 0): {"actual": "25 lb x10", "feel": "easy", "weight": "25", "load_hint": "1x DB, 25 lb"},
+                },
             )
 
             copied_week, _md, _out = generate_module.copy_week(
@@ -1483,6 +1547,7 @@ class CopyWeekTests(unittest.TestCase):
             copied_exercise = copied_day["blocks"][1]["exercises"][0]
             self.assertEqual(copied_exercise["actual"], "")
             self.assertEqual(copied_exercise["feel"], "")
+            self.assertEqual(copied_exercise["weight"], "")
             self.assertEqual(copied_exercise["load_hint"], "1x DB, 25 lb")  # carried over
 
     def test_copy_week_does_not_mutate_the_source_weeks_logs(self):
@@ -1584,7 +1649,9 @@ class ExportTests(unittest.TestCase):
         history.rate_week(1, 5)
         history.update_day_log(
             1, 0, completed=True, notes="good one",
-            exercise_logs={(1, 0): {"actual": "20 lb x10", "feel": "easy", "load_hint": "1x DB, 20 lb"}},
+            exercise_logs={
+                (1, 0): {"actual": "20 lb x10", "feel": "easy", "weight": "20", "load_hint": "1x DB, 20 lb"},
+            },
         )
 
         rows = export_module.history_rows(history)
@@ -1598,6 +1665,7 @@ class ExportTests(unittest.TestCase):
         logged_row = next(r for r in day1_rows if r["load_hint"] == "1x DB, 20 lb")
         self.assertEqual(logged_row["actual"], "20 lb x10")
         self.assertEqual(logged_row["feel"], "easy")
+        self.assertEqual(logged_row["weight"], "20")
 
     def test_history_rows_unrated_and_normal_week_defaults(self):
         history = History()

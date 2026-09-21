@@ -432,6 +432,23 @@ class WebServerTests(unittest.TestCase):
         # template) may still show "Never used" for at least one exercise
         self.assertIn(b"Never used", response.data)
 
+    def test_glossary_shows_pr_tag_after_logging_a_weight(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "weight_b1_e0": "20"}, follow_redirects=True,
+        )
+
+        response = self.client.get("/glossary")
+        self.assertIn(b'class="tag tag-pr"', response.data)
+        self.assertIn(b"PR: 20 lb", response.data)
+
+    def test_glossary_omits_pr_tag_when_never_logged(self):
+        self._generate_week()
+        response = self.client.get("/glossary")
+        self.assertNotIn(b'class="tag tag-pr"', response.data)
+        self.assertNotIn(b"PR:", response.data)
+
     def test_balance_requires_login(self):
         response = self.client.get("/balance")
         self.assertEqual(response.status_code, 302)
@@ -530,8 +547,10 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b'name="actual_b1_e0"', week_response.data)
         self.assertIn(b'name="feel_b1_e0"', week_response.data)
         self.assertIn(b'name="load_b1_e0"', week_response.data)
+        self.assertIn(b'name="weight_b1_e0"', week_response.data)
         self.assertNotIn(b'name="actual_b0_e0"', week_response.data)
         self.assertNotIn(b'name="load_b0_e0"', week_response.data)
+        self.assertNotIn(b'name="weight_b0_e0"', week_response.data)
 
     def test_week_page_shows_warmup_and_cooldown_with_a_timer_but_no_log_fields(self):
         week_response = self._generate_week()
@@ -589,6 +608,52 @@ class WebServerTests(unittest.TestCase):
         history = History.load(user_paths.user_history_path("testuser", self.data_root))
         exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
         self.assertEqual(exercise["load_hint"], "1x DB, 10 lb -- comfortable for me")
+
+    def test_log_day_saves_weight_and_flashes_new_pr(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "weight_b1_e0": "20"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"New PR", response.data)
+        self.assertIn(b"20", response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["weight"], "20")
+
+    def test_log_day_does_not_flash_new_pr_for_an_equal_or_lower_weight(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "weight_b1_e0": "20"}, follow_redirects=True,
+        )
+
+        week_response2 = self.client.get("/week/1")
+        csrf2 = self._csrf_from(week_response2)
+        response = self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf2, "weight_b1_e0": "15"}, follow_redirects=True,
+        )
+        self.assertNotIn(b"New PR", response.data)
+
+    def test_log_day_ignores_a_non_numeric_weight_for_pr_tracking(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "weight_b1_e0": "heavy"},
+            follow_redirects=True,
+        )
+        self.assertNotIn(b"New PR", response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["weight"], "heavy")
 
     def test_log_day_unchecked_completed_box_clears_it(self):
         week_response = self._generate_week()

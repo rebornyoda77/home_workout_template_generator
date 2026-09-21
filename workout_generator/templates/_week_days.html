@@ -40,8 +40,10 @@
           {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}
           {% if suggestion %}<p class="exercise-suggestion">{{ suggestion }}</p>{% endif %}
           <div class="log-row">
+            <input type="number" step="0.5" min="0" class="log-weight" name="weight_b{{ block_index }}_e{{ loop.index0 }}"
+                   placeholder="Weight" value="{{ exercise.weight }}" title="Weight used, for PR tracking (optional)">
             <input type="text" class="log-actual" name="actual_b{{ block_index }}_e{{ loop.index0 }}"
-                   placeholder="What did you actually do? (e.g. 20 lb x10)" value="{{ exercise.actual }}">
+                   placeholder="Reps / notes (e.g. 10 reps, felt strong)" value="{{ exercise.actual }}">
             <select class="log-feel" name="feel_b{{ block_index }}_e{{ loop.index0 }}">
               <option value="" {{ 'selected' if not exercise.feel }}>Feel...</option>
               <option value="easy" {{ 'selected' if exercise.feel == 'easy' }}>Too easy</option>
