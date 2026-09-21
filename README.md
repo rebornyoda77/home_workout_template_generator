@@ -99,7 +99,16 @@ the day isn't over) and your longest streak ever, per account.
 
 ## Day structure
 
-Every training day follows the same OTF-style block skeleton:
+Every training day opens with a **Warm-Up** (4 bodyweight movement-prep
+moves, 30s each) and closes with a **Cooldown & Stretch** (4 static
+stretches, 30s per side/hold) -- both picked from a small fixed set with no
+equipment needed, and, unlike the rest of the day, not part of the
+freshness/staleness tracking that governs the movement-pattern pool below
+(a warm-up routine repeating is fine; a strength exercise repeating too
+often isn't). They still get a Start Timer button like any other block, but
+no "what did you actually do" logging -- that doesn't apply to a stretch.
+
+In between, every training day follows the same OTF-style block skeleton:
 
 1. **Block A - Strength Superset** — two exercises back-to-back for a timed
    scheme (e.g. 4 rounds of 40s work / 20s rest each).

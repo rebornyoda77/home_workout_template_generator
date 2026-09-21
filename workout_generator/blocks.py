@@ -67,6 +67,62 @@ BAG_ROUND_STRUCTURES = [
      {"kind": "intervals", "rounds": 4, "work_seconds": 60, "rest_seconds": 20}),
 ]
 
+# Warm-up/cooldown moves are fixed, equipment-free content -- not part of
+# the trackable exercise pool (no pattern in ALL_PATTERNS, so they never
+# show up in the Glossary or compete for freshness/staleness scoring).
+# Picked fresh with `rng.sample` each time rather than repeated every week,
+# for a little variety, but with no history-based "don't repeat" logic --
+# unlike the main pool, that would be overkill for a fixed warm-up routine.
+WARMUP_PATTERN = "warmup"
+COOLDOWN_PATTERN = "cooldown"
+
+WARMUP_MOVES = [
+    ex_pool.Exercise("Arm Circles", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Circle both arms forward, then backward, gradually widening the "
+                                   "range of motion to loosen up the shoulders."),
+    ex_pool.Exercise("Bodyweight Squats", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Slow, controlled squats to loosen up the hips, knees, and ankles "
+                                   "before loading up."),
+    ex_pool.Exercise("High Knees", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Jog in place, driving the knees up toward hip height to raise the "
+                                   "heart rate and warm up the hip flexors."),
+    ex_pool.Exercise("Walking Lunge with Reach", WARMUP_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Step into a walking lunge and reach both arms overhead at the "
+                                   "bottom, opening up the hips and shoulders."),
+    ex_pool.Exercise("Jumping Jacks", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Jump the feet out while raising the arms overhead, then back "
+                                   "together, to get the whole body moving."),
+    ex_pool.Exercise("Inchworm to Push-Up", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Hinge over and walk the hands out to a plank, do one push-up, then "
+                                   "walk the feet back up to standing."),
+]
+
+COOLDOWN_MOVES = [
+    ex_pool.Exercise("Standing Quad Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Standing on one leg, pull the other heel toward the glutes to "
+                                   "stretch the front of the thigh, holding each side."),
+    ex_pool.Exercise("Standing Hamstring Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="With one heel propped forward on the floor, hinge at the hips and "
+                                   "reach toward the toes, holding each side."),
+    ex_pool.Exercise("Doorway Chest Stretch", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Place a forearm on a doorframe and gently lean forward to stretch "
+                                   "the chest and front of the shoulder, holding each side."),
+    ex_pool.Exercise("Child's Pose", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Kneel and sit back onto the heels, reaching the arms forward on the "
+                                   "floor to stretch the low back and shoulders."),
+    ex_pool.Exercise("Cross-Body Shoulder Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Pull one arm across the chest with the other hand to stretch the "
+                                   "back of the shoulder, holding each side."),
+    ex_pool.Exercise("Seated Forward Fold", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Sit with legs extended and reach toward the toes, keeping the back "
+                                   "long, to stretch the hamstrings and low back."),
+]
+
+WARMUP_COUNT = 4
+COOLDOWN_COUNT = 4
+WARMUP_STRUCTURE = f"{WARMUP_COUNT} moves, 30s each -- get the heart rate up and the joints moving"
+COOLDOWN_STRUCTURE = f"{COOLDOWN_COUNT} stretches, 30s per side/hold -- bring the heart rate back down"
+
 
 def _candidates(pattern, history: History, used_this_week, avoid_weeks, excluded_names=frozenset()):
     pool = ex_pool.by_pattern(pattern)
@@ -182,5 +238,27 @@ def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title=
         "title": title,
         "structure": structure,
         "timer": {**timer, "exercise_count": len(picked)},
+        "exercises": picked,
+    }
+
+
+def build_warmup(rng, count=WARMUP_COUNT, title="Warm-Up"):
+    picked = rng.sample(WARMUP_MOVES, k=min(count, len(WARMUP_MOVES)))
+    return {
+        "type": "warmup",
+        "title": title,
+        "structure": WARMUP_STRUCTURE,
+        "timer": {"kind": "intervals", "rounds": 1, "work_seconds": 30, "rest_seconds": 10, "exercise_count": len(picked)},
+        "exercises": picked,
+    }
+
+
+def build_cooldown(rng, count=COOLDOWN_COUNT, title="Cooldown & Stretch"):
+    picked = rng.sample(COOLDOWN_MOVES, k=min(count, len(COOLDOWN_MOVES)))
+    return {
+        "type": "cooldown",
+        "title": title,
+        "structure": COOLDOWN_STRUCTURE,
+        "timer": {"kind": "intervals", "rounds": 1, "work_seconds": 30, "rest_seconds": 5, "exercise_count": len(picked)},
         "exercises": picked,
     }

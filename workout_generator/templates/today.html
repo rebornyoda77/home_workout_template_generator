@@ -44,6 +44,7 @@
           </span>
           <span class="exercise-load">{{ exercise.load_hint }}</span>
         </div>
+        {% if block.type not in ('warmup', 'cooldown') %}
         {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}
         {% if suggestion %}<p class="exercise-suggestion">{{ suggestion }}</p>{% endif %}
         <div class="log-row">
@@ -56,6 +57,7 @@
             <option value="hard" {{ 'selected' if exercise.feel == 'hard' }}>Too hard</option>
           </select>
         </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

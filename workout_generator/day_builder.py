@@ -5,7 +5,10 @@ patterns so the actual exercises can rotate week to week.
 """
 
 from . import exercises as ex_pool
-from .blocks import build_bag_round, build_buyout, build_core_finisher, build_drop_set, build_superset
+from .blocks import (
+    build_bag_round, build_buyout, build_cooldown, build_core_finisher, build_drop_set,
+    build_superset, build_warmup,
+)
 
 CORE_PAIR = (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI)
 
@@ -51,6 +54,7 @@ DAY_TEMPLATES = [
 
 def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset()):
     blocks = [
+        build_warmup(rng),
         build_superset(
             template["block_a_patterns"], history, used_this_week, rng, avoid_weeks,
             title="Block A - Strength Superset", excluded_names=excluded_names,
@@ -79,12 +83,19 @@ def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_na
             ex_pool.BAG, history, used_this_week, rng, avoid_weeks,
             title="Bag Finisher", excluded_names=excluded_names,
         ),
+        build_cooldown(rng),
     ]
     return {"title": template["title"], "blocks": blocks}
 
 
 def exercise_names(day):
+    """Names used for history's freshness/staleness bookkeeping -- excludes
+    warm-up/cooldown blocks, since those are fixed content outside the
+    trackable exercise pool (see blocks.py), not exercises to avoid
+    repeating week to week."""
     names = []
     for block in day["blocks"]:
+        if block["type"] in ("warmup", "cooldown"):
+            continue
         names.extend(e.name for e in block["exercises"])
     return names

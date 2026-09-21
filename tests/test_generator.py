@@ -691,6 +691,29 @@ class BlockSelectionTests(unittest.TestCase):
             )
             self.assertEqual(block["exercises"][0].pattern, ex_pool.CARDIO)
 
+    def test_build_warmup_picks_the_configured_count_with_no_repeats(self):
+        block = blocks.build_warmup(random.Random(1))
+        self.assertEqual(block["type"], "warmup")
+        self.assertEqual(len(block["exercises"]), blocks.WARMUP_COUNT)
+        names = [e.name for e in block["exercises"]]
+        self.assertEqual(len(set(names)), len(names))
+        for exercise in block["exercises"]:
+            self.assertEqual(exercise.pattern, blocks.WARMUP_PATTERN)
+
+    def test_build_cooldown_picks_the_configured_count_with_no_repeats(self):
+        block = blocks.build_cooldown(random.Random(2))
+        self.assertEqual(block["type"], "cooldown")
+        self.assertEqual(len(block["exercises"]), blocks.COOLDOWN_COUNT)
+        names = [e.name for e in block["exercises"]]
+        self.assertEqual(len(set(names)), len(names))
+        for exercise in block["exercises"]:
+            self.assertEqual(exercise.pattern, blocks.COOLDOWN_PATTERN)
+
+    def test_warmup_and_cooldown_patterns_are_not_in_the_trackable_pool(self):
+        # so they never show up in the Glossary or compete for freshness scoring
+        self.assertNotIn(blocks.WARMUP_PATTERN, ex_pool.ALL_PATTERNS)
+        self.assertNotIn(blocks.COOLDOWN_PATTERN, ex_pool.ALL_PATTERNS)
+
 
 class TimerSpecTests(unittest.TestCase):
     """Every block builder must attach a machine-readable `timer` spec
@@ -774,12 +797,39 @@ class WeekBuilderTests(unittest.TestCase):
 
         self.assertEqual(len(week["days"]), 4)
         for day in week["days"]:
-            self.assertEqual(len(day["blocks"]), 7)
+            self.assertEqual(len(day["blocks"]), 9)
             types = [b["type"] for b in day["blocks"]]
             self.assertEqual(
                 types,
-                ["superset", "buyout", "superset", "buyout", "drop_set", "core_finisher", "bag_round"],
+                [
+                    "warmup", "superset", "buyout", "superset", "buyout",
+                    "drop_set", "core_finisher", "bag_round", "cooldown",
+                ],
             )
+
+    def test_exercise_names_excludes_warmup_and_cooldown_blocks(self):
+        history = History()
+        week = build_week(3, history, rng=random.Random(19), generated_at="2026-09-20")
+        day = week["days"][0]
+        names = exercise_names(day)
+        warmup_names = {e.name for e in day["blocks"][0]["exercises"]}
+        cooldown_names = {e.name for e in day["blocks"][-1]["exercises"]}
+        self.assertFalse(set(names) & warmup_names)
+        self.assertFalse(set(names) & cooldown_names)
+
+    def test_every_day_opens_with_a_warmup_and_closes_with_a_cooldown(self):
+        history = History()
+        week = build_week(3, history, rng=random.Random(17), generated_at="2026-09-20")
+        for day in week["days"]:
+            self.assertEqual(day["blocks"][0]["type"], "warmup")
+            self.assertEqual(day["blocks"][-1]["type"], "cooldown")
+
+    def test_warmup_and_cooldown_exercises_are_excluded_from_freshness_tracking(self):
+        history = History()
+        build_week(4, history, rng=random.Random(18), generated_at="2026-09-20")
+        warmup_names = {e.name for e in blocks.WARMUP_MOVES}
+        cooldown_names = {e.name for e in blocks.COOLDOWN_MOVES}
+        self.assertFalse(set(history.last_used) & (warmup_names | cooldown_names))
 
     def test_three_day_week_uses_distinct_templates(self):
         history = History()

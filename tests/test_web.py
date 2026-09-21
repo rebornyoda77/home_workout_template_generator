@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from workout_generator import blocks as blocks_module
 from workout_generator import user_paths, users, web_server
 from workout_generator.history import History
 
@@ -343,8 +344,23 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         self.assertIn(b'name="completed"', week_response.data)
         self.assertIn(b'name="notes"', week_response.data)
-        self.assertIn(b'name="actual_b0_e0"', week_response.data)
-        self.assertIn(b'name="feel_b0_e0"', week_response.data)
+        # block 0 is the warm-up, which has no per-exercise log fields --
+        # block 1 (Block A) is the first block that does.
+        self.assertIn(b'name="actual_b1_e0"', week_response.data)
+        self.assertIn(b'name="feel_b1_e0"', week_response.data)
+        self.assertNotIn(b'name="actual_b0_e0"', week_response.data)
+
+    def test_week_page_shows_warmup_and_cooldown_with_a_timer_but_no_log_fields(self):
+        week_response = self._generate_week()
+        data = week_response.data
+        self.assertIn(b"Warm-Up", data)
+        self.assertIn(b"Cooldown &amp; Stretch", data)
+        # Start Timer buttons exist for every block, including warm-up/cooldown...
+        self.assertIn(b'data-title="Warm-Up"', data)
+        self.assertIn(b'data-title="Cooldown &amp; Stretch"', data)
+        # ...but the warm-up/cooldown exercises don't get actual/feel log fields.
+        self.assertNotIn(b'name="actual_b0_e0"', data)
+        self.assertNotIn(b'name="feel_b0_e0"', data)
 
     def test_log_day_requires_valid_csrf_token(self):
         self._generate_week()
@@ -355,14 +371,17 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         csrf = self._csrf_from(week_response)
 
+        # block 0 is the warm-up (no per-exercise log fields -- see
+        # test_week_page_has_logging_form_fields); block 1 (Block A) is
+        # the first block that actually has actual/feel inputs to save.
         response = self.client.post(
             "/week/1/day/0/log",
             data={
                 "csrf_token": csrf,
                 "completed": "on",
                 "notes": "solid session",
-                "actual_b0_e0": "20 lb x10",
-                "feel_b0_e0": "right",
+                "actual_b1_e0": "20 lb x10",
+                "feel_b1_e0": "right",
             },
             follow_redirects=True,
         )
@@ -370,7 +389,7 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"Saved log for Day 1", response.data)
         self.assertIn(b"Completed", response.data)  # the day-card badge
         self.assertIn(b"solid session", response.data)
-        self.assertIn(b"20 lb x10", response.data)
+        self.assertIn(b'value="20 lb x10"', response.data)  # not just the input's placeholder text
 
     def test_log_day_unchecked_completed_box_clears_it(self):
         week_response = self._generate_week()
@@ -426,13 +445,16 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         csrf = self._csrf_from(week_response)
 
-        first_exercise_name = re.search(
+        # block 0 is the warm-up (not part of the trackable pool -- see
+        # blocks.py); the first *loggable* exercise is block 1's (Block A).
+        all_names = re.findall(
             rb'<span class="exercise-name">([^<]+?)(?: \(each side\))?</span>', week_response.data,
-        ).group(1).decode()
+        )
+        first_exercise_name = all_names[blocks_module.WARMUP_COUNT].decode()
 
         self.client.post(
             "/week/1/day/0/log",
-            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "easy"},
+            data={"csrf_token": csrf, "actual_b1_e0": "20 lb x10", "feel_b1_e0": "easy"},
             follow_redirects=True,
         )
 
@@ -456,7 +478,7 @@ class WebServerTests(unittest.TestCase):
 
         self.client.post(
             "/week/1/day/0/log",
-            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "hard"},
+            data={"csrf_token": csrf, "actual_b1_e0": "20 lb x10", "feel_b1_e0": "hard"},
             follow_redirects=True,
         )
 
