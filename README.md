@@ -54,6 +54,9 @@ python main.py generate --no-deload        # force it to be a normal week instea
 # e.g. give a spouse the same exercises you're doing, for them to retarget:
 python main.py copy --week 3 --user dad --to mom
 
+python main.py export                   # full history as CSV, one row per exercise, to stdout
+python main.py export --out history.csv # ...or straight to a file
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -125,6 +128,15 @@ same "Save Log" button. It's a plain edit to that one week's own stored
 copy of the exercise (the same independence `copy` above relies on):
 editing it never touches the shared exercise pool, any other week, or
 anyone else's account.
+
+`python main.py export` (add `--user <name>` for a specific person, `--out
+<file>` to write straight to a file instead of stdout) flattens that
+person's whole history into CSV, one row per exercise instance across
+every generated week -- week number/date/deload flag/rating, day
+number/title/completion/notes, block title/type/structure, and the
+exercise's own name/prescribed load/actual/feel -- for opening in a
+spreadsheet or charting elsewhere. Read-only: it never changes
+history.json. The web UI has the same export as a link on the History page.
 
 Every `generate`/`regenerate`/`delete` also snapshots that history file
 into a `backups/` folder right next to it (`data/backups/`, or
@@ -326,6 +338,7 @@ workout_generator/
   day_builder.py    day templates + assembling one day's blocks
   week_builder.py  picks day templates and assembles a full week
   formatter.py     renders a generated week to Markdown
+  export.py        flattens history into CSV rows (`export`, one row per exercise)
   generate.py      shared "build a week + persist it" logic (CLI + web)
   cli.py           argparse CLI (see main.py)
   users.py         account storage (data/users.json) -- one login per person

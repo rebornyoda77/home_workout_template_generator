@@ -6,6 +6,7 @@ from . import exercises as ex_pool
 from . import user_paths
 from . import users
 from .backup import DEFAULT_KEEP
+from .export import history_to_csv
 from .generate import (
     DEFAULT_OUTPUT_DIR, copy_week, delete_week, find_exclusion_violations, generate_week,
     rate_week, regenerate_week, resolve_excluded_names,
@@ -13,7 +14,7 @@ from .generate import (
 from .history import DEFAULT_HISTORY_PATH, History
 from .week_builder import DELOAD_INTERVAL_WEEKS
 
-COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy")
+COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy", "export")
 
 
 def _common_paths(parser):
@@ -159,6 +160,13 @@ def build_arg_parser():
         help="Account to copy this week's plan into, as a brand-new week in their own sequence.",
     )
     _common_paths(copy_parser)
+
+    export_parser = sub.add_parser("export", help="Export full history as CSV (one row per exercise).")
+    export_parser.add_argument(
+        "--out", type=Path, default=None,
+        help="Write the CSV to this file instead of printing it to stdout.",
+    )
+    _common_paths(export_parser)
 
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
@@ -309,6 +317,18 @@ def _cmd_copy(args) -> int:
     return 0
 
 
+def _cmd_export(args) -> int:
+    history = History.load(_resolve_history_file(args))
+    csv_text = history_to_csv(history)
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(csv_text, encoding="utf-8")
+        print(f"Exported {len(history.weeks)} week(s) to {args.out}", file=sys.stderr)
+    else:
+        print(csv_text, end="")
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
@@ -330,6 +350,7 @@ _HANDLERS = {
     "rate": _cmd_rate,
     "streaks": _cmd_streaks,
     "copy": _cmd_copy,
+    "export": _cmd_export,
     "backups": _cmd_backups,
 }
 

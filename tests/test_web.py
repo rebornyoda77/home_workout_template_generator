@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from workout_generator import blocks as blocks_module
+from workout_generator import export as export_module
 from workout_generator import user_paths, users, web_server
 from workout_generator.history import History
 
@@ -355,6 +356,41 @@ class WebServerTests(unittest.TestCase):
 
         response = self.client.get("/history")
         self.assertIn("★★★".encode(), response.data)
+
+    def test_history_page_links_to_csv_export(self):
+        self._generate_week()
+        response = self.client.get("/history")
+        self.assertIn(b'href="/history/export.csv"', response.data)
+
+    def test_export_history_csv_requires_login(self):
+        response = self.client.get("/history/export.csv")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_export_history_csv_returns_a_csv_attachment(self):
+        self._generate_week()
+        response = self.client.get("/history/export.csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.headers["Content-Type"])
+        self.assertIn("attachment", response.headers["Content-Disposition"])
+        self.assertIn("testuser-history.csv", response.headers["Content-Disposition"])
+
+        lines = response.data.decode().strip().splitlines()
+        self.assertEqual(lines[0].strip(), ",".join(export_module.CSV_FIELDNAMES))
+        self.assertGreater(len(lines), 1)
+
+    def test_export_history_csv_is_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._generate_week()
+        response = self.client.get("/history/export.csv")
+        rows_for_testuser = len(response.data.decode().strip().splitlines()) - 1
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        other_response = self.client.get("/history/export.csv")
+        other_lines = other_response.data.decode().strip().splitlines()
+        self.assertEqual(len(other_lines), 1)  # header only -- otheruser generated nothing
+        self.assertGreater(rows_for_testuser, 0)
 
     def test_glossary_requires_login(self):
         response = self.client.get("/glossary")

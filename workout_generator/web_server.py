@@ -10,10 +10,11 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
 from . import exercises as ex_pool
 from . import users
+from .export import history_to_csv
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
@@ -386,6 +387,15 @@ def create_app(
         return render_template(
             "history.html", active_page="history", weeks=list(reversed(history.weeks)),
             csrf_token=_new_csrf_token(),
+        )
+
+    @app.route("/history/export.csv")
+    def export_history_csv():
+        history = History.load(_history_path())
+        csv_text = history_to_csv(history)
+        return Response(
+            csv_text, mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{session["username"]}-history.csv"'},
         )
 
     @app.route("/glossary")

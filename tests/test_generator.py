@@ -15,6 +15,7 @@ from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
 from workout_generator import day_builder as day_builder_module
+from workout_generator import export as export_module
 from workout_generator import formatter as formatter_module
 from workout_generator.day_builder import DAY_TEMPLATES, exercise_names
 from workout_generator.history import History
@@ -1524,6 +1525,65 @@ class CopyWeekTests(unittest.TestCase):
             self.assertFalse(target_output_dir.exists())
 
 
+class ExportTests(unittest.TestCase):
+    def test_history_to_csv_on_empty_history_is_just_the_header(self):
+        csv_text = export_module.history_to_csv(History())
+        lines = csv_text.strip("\r\n").split("\r\n")
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0].split(","), export_module.CSV_FIELDNAMES)
+
+    def test_history_rows_has_one_row_per_exercise_instance(self):
+        history = History()
+        week = build_week(3, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        rows = export_module.history_rows(history)
+        expected = sum(len(block["exercises"]) for day in week["days"] for block in day["blocks"])
+        self.assertEqual(len(rows), expected)
+
+    def test_history_rows_reflect_week_day_and_exercise_fields(self):
+        history = History()
+        build_week(3, history, rng=random.Random(2), generated_at="2026-09-06", deload=True)
+        history.rate_week(1, 5)
+        history.update_day_log(
+            1, 0, completed=True, notes="good one",
+            exercise_logs={(1, 0): {"actual": "20 lb x10", "feel": "easy", "load_hint": "1x DB, 20 lb"}},
+        )
+
+        rows = export_module.history_rows(history)
+        day1_rows = [r for r in rows if r["day_number"] == 1]
+        self.assertTrue(all(r["week_index"] == 1 for r in day1_rows))
+        self.assertTrue(all(r["deload"] == "yes" for r in day1_rows))
+        self.assertTrue(all(r["week_rating"] == 5 for r in day1_rows))
+        self.assertTrue(all(r["day_completed"] == "yes" for r in day1_rows))
+        self.assertTrue(all(r["day_notes"] == "good one" for r in day1_rows))
+
+        logged_row = next(r for r in day1_rows if r["load_hint"] == "1x DB, 20 lb")
+        self.assertEqual(logged_row["actual"], "20 lb x10")
+        self.assertEqual(logged_row["feel"], "easy")
+
+    def test_history_rows_unrated_and_normal_week_defaults(self):
+        history = History()
+        build_week(3, history, rng=random.Random(3), generated_at="2026-09-06")
+        rows = export_module.history_rows(history)
+        self.assertTrue(all(r["deload"] == "no" for r in rows))
+        self.assertTrue(all(r["week_rating"] == "" for r in rows))
+        self.assertTrue(all(r["day_completed"] == "no" for r in rows))
+
+    def test_history_to_csv_is_valid_csv_and_survives_commas_in_notes(self):
+        import csv
+        import io
+
+        history = History()
+        build_week(3, history, rng=random.Random(4), generated_at="2026-09-06")
+        history.update_day_log(1, 0, notes="great, tough session, felt strong")
+
+        csv_text = export_module.history_to_csv(history)
+        reader = csv.DictReader(io.StringIO(csv_text))
+        rows = list(reader)
+        self.assertEqual(reader.fieldnames, export_module.CSV_FIELDNAMES)
+        self.assertTrue(any(r["day_notes"] == "great, tough session, felt strong" for r in rows))
+
+
 class CliTests(unittest.TestCase):
     def test_dry_run_does_not_write_history_or_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1826,6 +1886,49 @@ class CliTests(unittest.TestCase):
             rc = cli_main(["copy", "--week", "999", "--user", source_username, "--to", target_username])
         self.assertEqual(rc, 1)
         self.assertIn("doesn't exist", stderr.getvalue())
+
+    def test_export_subcommand_prints_csv_to_stdout(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["export", *common])
+            self.assertEqual(rc, 0)
+            lines = stdout.getvalue().strip().splitlines()
+            self.assertEqual(lines[0].strip(), ",".join(export_module.CSV_FIELDNAMES))
+            self.assertGreater(len(lines), 1)
+
+    def test_export_subcommand_writes_to_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            out_path = Path(tmp_dir) / "export" / "history.csv"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                rc = cli_main(["export", "--out", str(out_path), *common])
+            self.assertEqual(rc, 0)
+            self.assertTrue(out_path.exists())
+            self.assertIn("Exported 1 week(s)", stderr.getvalue())
+            self.assertIn("day_title", out_path.read_text(encoding="utf-8"))
+
+    def test_export_subcommand_on_empty_history_is_just_the_header(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["export", *common])
+            self.assertEqual(rc, 0)
+            self.assertEqual(stdout.getvalue().strip(), ",".join(export_module.CSV_FIELDNAMES))
 
     def test_streaks_subcommand_reports_current_and_longest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
