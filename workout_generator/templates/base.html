@@ -43,6 +43,7 @@
   nav a:hover { background: var(--bg); color: var(--text); }
   nav a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   nav .spacer { flex: 1 1 auto; }
+  .current-user { font-size: 12.5px; color: var(--text-muted); padding: 6px 8px; white-space: nowrap; }
   main.content-wrap { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; }
   .flash { background: var(--accent-soft); border: 1px solid var(--accent-soft-border); color: var(--accent-hover); border-radius: var(--radius-sm); padding: 10px 14px; margin: 0 0 20px; font-size: 13.5px; }
@@ -197,7 +198,7 @@
 </style>
 </head>
 <body>
-{% if session.get('authed') %}
+{% if session.get('username') %}
 <header class="topbar">
 <div class="topbar-inner">
 <nav>
@@ -207,6 +208,7 @@
   <a href="{{ url_for('history_page') }}" class="{{ 'active' if active_page in ('history', 'weeks') else '' }}">History</a>
   <a href="{{ url_for('glossary') }}" class="{{ 'active' if active_page == 'glossary' else '' }}">Glossary</a>
   <span class="spacer"></span>
+  <span class="current-user">{{ current_display_name }}</span>
   <a href="{{ url_for('logout') }}">Log out</a>
 </nav>
 </div>
@@ -227,7 +229,7 @@
 </div>
 </main>
 
-{% if session.get('authed') %}
+{% if session.get('username') %}
 <div id="workout-timer-modal" class="timer-modal" aria-hidden="true">
   <div class="timer-card">
     <p class="timer-title" id="timer-title"></p>

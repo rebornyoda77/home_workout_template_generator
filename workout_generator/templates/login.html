@@ -25,11 +25,12 @@
     margin: 0 auto 16px;
   }
   h1 { font-size: 18px; font-weight: 700; text-align: center; margin: 0 0 22px; letter-spacing: -.01em; }
-  input {
+  input, select {
     width: 100%; padding: 11px 12px; font-size: 16px; margin: 0 0 14px; box-sizing: border-box;
-    border: 1px solid #d3d6dc; border-radius: 8px; font-family: inherit;
+    border: 1px solid #d3d6dc; border-radius: 8px; font-family: inherit; background: #fff; color: inherit;
   }
-  input:focus { outline: none; border-color: #ff6a13; box-shadow: 0 0 0 3px #fff1e6; }
+  input:focus, select:focus { outline: none; border-color: #ff6a13; box-shadow: 0 0 0 3px #fff1e6; }
+  label { display: block; font-size: 13px; font-weight: 600; color: #6b7280; margin: 0 0 6px; }
   button {
     width: 100%; padding: 11px; font-size: 15px; font-weight: 600; cursor: pointer;
     background: #ff6a13; border: 1px solid #ff6a13; border-radius: 8px; color: #fff;
@@ -37,16 +38,28 @@
   }
   button:hover { background: #e05a0a; border-color: #e05a0a; }
   .error { color: #c22b3a; background: #fbe7e9; padding: 9px 12px; border-radius: 7px; font-size: 13.5px; margin: 0 0 14px; }
+  .no-accounts { font-size: 13.5px; color: #6b7280; text-align: center; }
+  .no-accounts code { background: #f3f4f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 </style>
 </head><body>
 <div class="card">
   <div class="icon">W</div>
   <h1>Workout Generator</h1>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if accounts %}
   <form method="post">
-    <input type="password" name="passcode" placeholder="Passcode" autofocus required>
+    <label for="username">Who's this?</label>
+    <select id="username" name="username" required autofocus>
+      {% for account in accounts %}
+      <option value="{{ account.username }}">{{ account.display_name }}</option>
+      {% endfor %}
+    </select>
+    <input type="password" name="password" placeholder="Password" required>
     <button type="submit">Log In</button>
   </form>
+  {% else %}
+  <p class="no-accounts">No accounts yet. Create one on the server with<br><code>python web_main.py --add-user</code></p>
+  {% endif %}
 </div>
 <script>
   if ('serviceWorker' in navigator) {

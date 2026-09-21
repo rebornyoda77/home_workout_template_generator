@@ -44,6 +44,11 @@ python main.py rate --week 3 --clear    # remove that rating
 python main.py generate --exclude-exercise "Shoulder Press Half-Kneeling"
 python main.py generate --exclude-pattern push_vertical
 python main.py regenerate --week 3 --exclude-pattern push_vertical --exclude-pattern pull_vertical
+
+# --user picks whose history.json/output to use (see "Web interface" below) --
+# every subcommand above accepts it; omit it to use the shared default path
+python main.py generate --user dad
+python main.py list --user kiddo
 ```
 
 Each `generate`/`regenerate` run:
@@ -56,7 +61,10 @@ Each `generate`/`regenerate` run:
    exercise already used elsewhere that same week while alternatives exist.
 3. Writes the plan to `output/week-NN-YYYY-MM-DD.md` and updates
    `data/history.json` (the record the "don't repeat too often" logic reads
-   on the next run).
+   on the next run) -- or, with `--user <name>`, that person's own
+   `output/<name>/week-NN-*.md` and `data/users/<name>/history.json` instead
+   (see "Web interface" below; the web UI always uses your logged-in
+   account's own files this way).
 
 `regenerate` keeps the week's number (so its spot in `list`/the web history
 page doesn't move) but discards its old exercises before rerolling, so they
@@ -72,11 +80,14 @@ A always needs a Squat and a Horizontal Push pick) — if excluding a whole
 pattern can't be fully honored for that reason, you'll get a warning listing
 which exercises had to be included anyway, rather than a silent no-op.
 
-Every `generate`/`regenerate`/`delete` also snapshots `data/history.json`
-into `data/backups/` (skipped if unchanged from the last snapshot, keeping
-the most recent 20) — it's the only state the "don't repeat too often"
-logic depends on, so it's worth protecting. `python main.py backups` lists
-what's there; to restore one, just copy it back over `data/history.json`.
+Every `generate`/`regenerate`/`delete` also snapshots that history file
+into a `backups/` folder right next to it (`data/backups/`, or
+`data/users/<name>/backups/` with `--user`) — skipped if unchanged from the
+last snapshot, keeping the most recent 20. It's the only state the "don't
+repeat too often" logic depends on, so it's worth protecting.
+`python main.py backups` (add `--user <name>` for a specific person) lists
+what's there; to restore one, just copy it back over that same
+`history.json`.
 
 ## Day structure
 
@@ -105,15 +116,24 @@ pairs so a 3- or 4-day week stays varied. See
 
 ## Web interface
 
-A small Flask app (styled like the budget tool's web interface: single
-passcode gate, no accounts) lets you generate and browse weeks from a
-browser instead of the CLI.
+A small Flask app lets you generate and browse weeks from a browser
+instead of the CLI. Each person gets their own login and their own
+completely separate history -- generated weeks, exercise-use tracking,
+ratings, and logs never mix between accounts, so you can share one
+install with your household and everyone sees only their own workouts.
 
 ```bash
 pip install -r requirements.txt
-python web_main.py --set-passcode   # first time only
+python web_main.py --add-user       # create your account (and again for anyone else)
 python web_main.py                  # runs at http://127.0.0.1:5050
 ```
+
+`--add-user` prompts for a username, an optional display name, and a
+password -- run it once per person. Other account commands:
+`--list-users`, `--remove-user <name>` (keeps their data, just removes
+the login), and `--migrate-legacy-data <name>` (see "Upgrading from a
+single shared login" below). The login page shows a dropdown of every
+account by display name -- pick yourself and enter your password.
 
 Pages: **Dashboard** (generate a new week, shows the latest one, with
 Regenerate/Delete/Print buttons), **History** (every past week, with a View
@@ -131,8 +151,9 @@ pattern for the week (see `--exclude-pattern` above).
 Every day on the Dashboard/week page also has a log form right under it:
 a "Mark this day complete" checkbox, a free-text "what did you actually do"
 + a quick "too easy / just right / too hard" pick per exercise, and a notes
-field -- "Save Log" persists it to that day's entry in `data/history.json`
-(also picked up by `python main.py list`/`backups`, and backed up like
+field -- "Save Log" persists it to that day's entry in your account's own
+`history.json` (also picked up by `python main.py list --user <name>`/
+`backups`, and backed up like
 everything else). A completed day gets a badge next to its title.
 
 Once an exercise has been logged, its most recent "too easy/right/hard"
@@ -173,14 +194,30 @@ rotation always has. History's Rating column shows each past week's stars
 at a glance. CLI parity: `python main.py rate --week N --stars 1-5` (or
 `--clear`).
 
-The generator pages share the same `data/history.json` as the CLI, so weeks
-generated, deleted, or regenerated either way show up on both — manage it
-from your phone over the week, or from the terminal, and either sees what
-the other did. To reach it from another device, don't just bind
-`--host 0.0.0.0` (that exposes it, unencrypted, to everything on your
-network) — see the [User Guide](docs/user_guide.md) for running it behind
-nginx and Tailscale instead, with a real HTTPS URL and zero public
-exposure.
+The generator pages share the same per-user `data/users/<name>/history.json`
+as the CLI's `--user <name>` flag, so weeks generated, deleted, or
+regenerated either way show up on both — manage your week from your phone,
+or from the terminal, and either sees what the other did. To reach it from
+another device, don't just bind `--host 0.0.0.0` (that exposes it,
+unencrypted, to everything on your network) — see the
+[User Guide](docs/user_guide.md) for running it behind nginx and Tailscale
+instead, with a real HTTPS URL and zero public exposure.
+
+### Upgrading from a single shared login
+
+If you're updating an install from before accounts existed, your old data
+is still there in `data/history.json` -- nothing was deleted, but the app
+won't use it until you claim it:
+
+```bash
+python web_main.py --add-user               # create your own account
+python web_main.py --migrate-legacy-data <your-username>
+```
+
+That moves the old shared `history.json` (and its backups, and any
+already-generated `output/week-*.md` files) into your new account. Run
+`--add-user` again for anyone else in your household -- they start with a
+fresh, empty history of their own.
 
 **Install it as an app** on your phone's home screen instead of using a
 browser tab/bookmark: on iOS, open it in Safari and use Share -> Add to
@@ -191,9 +228,9 @@ option instead of an install banner. Either way you get a standalone app
 icon (the same orange "W" as the browser tab) that opens straight into
 **Today's Workout**, no browser chrome or address bar. This is served by a
 `manifest.json` + a deliberately no-op service worker (it never caches
-anything -- every page here is behind the passcode gate and shows live
+anything -- every page here is behind a login and shows live per-user
 data, so caching risks showing stale or, on a shared device, another
-session's page; the service worker exists purely to satisfy Chrome's
+account's page; the service worker exists purely to satisfy Chrome's
 installability check).
 
 ## Project layout
@@ -208,16 +245,21 @@ workout_generator/
   formatter.py     renders a generated week to Markdown
   generate.py      shared "build a week + persist it" logic (CLI + web)
   cli.py           argparse CLI (see main.py)
-  web_config.py    web passcode storage (data/web_config.json)
+  users.py         account storage (data/users.json) -- one login per person
+  user_paths.py    resolves a username to their own history/output paths
+  migrate.py       one-time move of pre-accounts data into a named user
   web_server.py    Flask app (see web_main.py)
   templates/       Jinja2 templates for the web interface
   static/          manifest.json, service worker, and app icons (PWA install)
 data/
-  history.json      generated at runtime; tracks exercise-use history
-  web_config.json    generated at runtime; hashed web passcode
-  backups/           generated at runtime; timestamped history.json snapshots
+  users.json         generated at runtime; account usernames + hashed passwords
+  users/<name>/
+    history.json       generated at runtime; that user's own exercise-use history
+    backups/            generated at runtime; timestamped history.json snapshots
+  history.json       pre-accounts installs only; see "Upgrading" above
 output/
-  week-*.md        generated weekly plans
+  <name>/week-*.md  generated weekly plans, one folder per user
+  week-*.md         pre-accounts installs only; see "Upgrading" above
 tests/
   test_generator.py
   test_web.py

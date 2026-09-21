@@ -27,19 +27,36 @@ pip install -r requirements.txt
 Python -- worth doing on a Pi you'll also use for other things.)
 
 **3. Get your data onto the server**, if you're moving from an existing
-setup rather than starting fresh -- copy `data/history.json` (and
-`data/web_config.json`, if you want to keep the same passcode) into the
-project folder. Both are plain JSON and safe to copy by hand; nothing else
-under `data/` needs to move (`data/backups/` will rebuild itself over
-time).
+setup rather than starting fresh -- copy `data/users.json` and
+`data/users/` (everyone's accounts and their own histories) into the
+project folder. All plain JSON, safe to copy by hand; nothing else under
+`data/` needs to move (each user's `backups/` folder will rebuild itself
+over time).
 
-**4. Set a web passcode directly on the server.** `data/web_config.json`
-is per-install -- it won't already exist if you're setting up fresh, and
-copying it over in step 3 already handles the "keep my existing passcode"
-case. Either way, this is how you set (or change) it:
+If you're moving from an install from *before* accounts existed at all,
+you'll have a flat `data/history.json` instead -- copy that over too, then
+see "create an account for yourself" and "one-time: claim your old data"
+below, in that order.
+
+**4. Create an account for yourself** (and repeat for anyone else in your
+household -- each person gets their own login and their own separate
+history):
 ```
-python web_main.py --set-passcode
+python web_main.py --add-user
 ```
+It prompts for a username, an optional display name, and a password.
+`data/users.json` (created on first use) holds every account; nothing here
+is set up yet if you're starting fresh.
+
+**One-time: claim your old data**, only if you copied over a flat
+`data/history.json` in step 3 (skip this on a fresh install, or one that
+already had accounts):
+```
+python web_main.py --migrate-legacy-data <your-username>
+```
+This moves that old shared history (and its backups, and any already-
+generated `output/week-*.md` files) into your new account -- run it once,
+pointed at yourself, not at anyone else.
 
 **5. Run it once by hand to confirm it works:**
 ```
@@ -111,8 +128,9 @@ boot, which their own installers already set up), you don't need to redo
 steps 6-8 after a reboot -- only the app's own systemd service needed that
 explicit `enable`.
 
-**Keep the app's own passcode login even with Tailscale.** Tailscale's
-network-level access control is strong, but anyone who can reach any
-device already on your tailnet (or whose Tailscale account is
-compromised) could otherwise reach the app -- the passcode is a second,
-independent layer worth keeping.
+**Keep the app's own login even with Tailscale.** Tailscale's network-level
+access control is strong, but anyone who can reach any device already on
+your tailnet (or whose Tailscale account is compromised) could otherwise
+reach the app -- separate accounts and passwords are a second, independent
+layer worth keeping, on top of also keeping everyone's workout history
+separate from each other.

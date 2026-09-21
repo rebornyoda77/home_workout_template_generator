@@ -1,12 +1,15 @@
+import argparse
 import io
 import json
 import random
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from workout_generator import blocks, exercises as ex_pool, progression
+from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
+from workout_generator import cli as cli_module
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
@@ -357,6 +360,176 @@ class BackupTests(unittest.TestCase):
             # the survivors should be the 3 most recently written
             contents = [f.read_text(encoding="utf-8") for f in remaining]
             self.assertEqual(contents, ['{"a": 3}', '{"a": 4}', '{"a": 5}'])
+
+
+class UsersTests(unittest.TestCase):
+    def _path(self, tmp_dir):
+        return Path(tmp_dir) / "users.json"
+
+    def test_add_and_verify_user(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("Dad", "hunter2", "Dad", path=path)
+            self.assertTrue(users.verify_user("dad", "hunter2", path=path))  # case-insensitive username
+            self.assertTrue(users.verify_user("Dad", "hunter2", path=path))
+            self.assertFalse(users.verify_user("dad", "wrong", path=path))
+
+    def test_verify_unknown_user_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self.assertFalse(users.verify_user("nobody", "x", path=self._path(tmp_dir)))
+
+    def test_add_user_rejects_invalid_username(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            with self.assertRaises(ValueError):
+                users.add_user("D", "hunter2", path=path)  # too short
+            with self.assertRaises(ValueError):
+                users.add_user("has spaces", "hunter2", path=path)
+            with self.assertRaises(ValueError):
+                users.add_user("Dad!", "hunter2", path=path)
+
+    def test_add_user_rejects_blank_password(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with self.assertRaises(ValueError):
+                users.add_user("dad", "", path=self._path(tmp_dir))
+
+    def test_add_user_overwrites_existing_account(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("dad", "old-pass", path=path)
+            users.add_user("dad", "new-pass", path=path)
+            self.assertFalse(users.verify_user("dad", "old-pass", path=path))
+            self.assertTrue(users.verify_user("dad", "new-pass", path=path))
+
+    def test_list_users_sorted_with_display_names(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("mom", "pw1", "Mom", path=path)
+            users.add_user("dad", "pw2", "Dad", path=path)
+            self.assertEqual(
+                users.list_users(path=path),
+                [{"username": "dad", "display_name": "Dad"}, {"username": "mom", "display_name": "Mom"}],
+            )
+
+    def test_list_users_defaults_display_name_to_username(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("kiddo", "pw", path=path)
+            self.assertEqual(users.list_users(path=path), [{"username": "kiddo", "display_name": "kiddo"}])
+
+    def test_has_any_users(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            self.assertFalse(users.has_any_users(path=path))
+            users.add_user("dad", "pw", path=path)
+            self.assertTrue(users.has_any_users(path=path))
+
+    def test_user_exists(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("dad", "pw", path=path)
+            self.assertTrue(users.user_exists("Dad", path=path))
+            self.assertFalse(users.user_exists("mom", path=path))
+
+    def test_remove_user(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("dad", "pw", path=path)
+            self.assertTrue(users.remove_user("dad", path=path))
+            self.assertFalse(users.user_exists("dad", path=path))
+            self.assertFalse(users.remove_user("dad", path=path))  # already gone
+
+    def test_display_name_for(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = self._path(tmp_dir)
+            users.add_user("dad", "pw", "Dad", path=path)
+            self.assertEqual(users.display_name_for("dad", path=path), "Dad")
+            self.assertEqual(users.display_name_for("nobody", path=path), "nobody")
+
+    def test_is_valid_username(self):
+        self.assertTrue(users.is_valid_username("dad"))
+        self.assertTrue(users.is_valid_username("kid_2"))
+        self.assertFalse(users.is_valid_username("a"))
+        self.assertFalse(users.is_valid_username("Has Caps And Spaces"))
+        self.assertFalse(users.is_valid_username("x" * 33))
+
+
+class UserPathsTests(unittest.TestCase):
+    def test_user_history_path_is_namespaced_by_username(self):
+        path = user_paths.user_history_path("Dad", data_root=Path("/tmp/data"))
+        self.assertEqual(path, Path("/tmp/data/users/dad/history.json"))
+
+    def test_user_output_dir_is_namespaced_by_username(self):
+        path = user_paths.user_output_dir("Mom", output_root=Path("/tmp/output"))
+        self.assertEqual(path, Path("/tmp/output/mom"))
+
+    def test_different_users_get_different_paths(self):
+        root = Path("/tmp/data")
+        self.assertNotEqual(
+            user_paths.user_history_path("dad", data_root=root),
+            user_paths.user_history_path("mom", data_root=root),
+        )
+
+
+class MigrateTests(unittest.TestCase):
+    def test_migrate_moves_history_backups_and_output(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            legacy_history = tmp_path / "history.json"
+            legacy_history.write_text('{"weeks": []}', encoding="utf-8")
+            (tmp_path / "backups").mkdir()
+            (tmp_path / "backups" / "history_20260101.json").write_text("{}", encoding="utf-8")
+            legacy_output = tmp_path / "output"
+            legacy_output.mkdir()
+            (legacy_output / "week-01-2026-01-01.md").write_text("# Week 1", encoding="utf-8")
+            (legacy_output / "not-a-week-file.txt").write_text("ignore me", encoding="utf-8")
+
+            data_root = tmp_path / "data"
+            summary = migrate.migrate_legacy_data(
+                "dad",
+                legacy_history_path=legacy_history,
+                legacy_output_dir=legacy_output,
+                data_root=data_root,
+                output_root=tmp_path / "new_output",
+            )
+
+            self.assertEqual(summary, {"moved_history": True, "moved_backups": True, "moved_output_files": 1})
+            self.assertFalse(legacy_history.exists())
+            new_history = user_paths.user_history_path("dad", data_root=data_root)
+            self.assertTrue(new_history.exists())
+            self.assertEqual(new_history.read_text(encoding="utf-8"), '{"weeks": []}')
+            self.assertTrue((new_history.parent / "backups" / "history_20260101.json").exists())
+            new_output_dir = user_paths.user_output_dir("dad", output_root=tmp_path / "new_output")
+            self.assertTrue((new_output_dir / "week-01-2026-01-01.md").exists())
+            # non-week files aren't part of the migration
+            self.assertFalse((new_output_dir / "not-a-week-file.txt").exists())
+
+    def test_migrate_raises_when_no_legacy_history_exists(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with self.assertRaises(ValueError):
+                migrate.migrate_legacy_data(
+                    "dad",
+                    legacy_history_path=tmp_path / "history.json",
+                    data_root=tmp_path / "data",
+                )
+
+    def test_migrate_refuses_to_overwrite_existing_user_data(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            legacy_history = tmp_path / "history.json"
+            legacy_history.write_text("{}", encoding="utf-8")
+
+            data_root = tmp_path / "data"
+            existing = user_paths.user_history_path("dad", data_root=data_root)
+            existing.parent.mkdir(parents=True)
+            existing.write_text('{"already": "here"}', encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                migrate.migrate_legacy_data("dad", legacy_history_path=legacy_history, data_root=data_root)
+            # neither file should have been touched
+            self.assertTrue(legacy_history.exists())
+            self.assertEqual(existing.read_text(encoding="utf-8"), '{"already": "here"}')
 
 
 class BlockSelectionTests(unittest.TestCase):
@@ -950,6 +1123,54 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 cli_main(["rate", "--week", "1"])
+
+    def test_resolve_history_file_prefers_explicit_flag_over_user(self):
+        args = argparse.Namespace(history_file=Path("/explicit/history.json"), user="dad")
+        self.assertEqual(cli_module._resolve_history_file(args), Path("/explicit/history.json"))
+
+    def test_resolve_history_file_derives_from_user_when_no_explicit_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_root = Path(tmp_dir) / "data"
+            args = argparse.Namespace(history_file=None, user="Dad")
+            self.assertEqual(
+                cli_module._resolve_history_file(args, data_root=data_root),
+                data_root / "users" / "dad" / "history.json",
+            )
+
+    def test_resolve_history_file_falls_back_to_shared_default_without_user(self):
+        args = argparse.Namespace(history_file=None, user=None)
+        self.assertEqual(cli_module._resolve_history_file(args), cli_module.DEFAULT_HISTORY_PATH)
+
+    def test_resolve_output_dir_derives_from_user_when_no_explicit_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_root = Path(tmp_dir) / "output"
+            args = argparse.Namespace(output_dir=None, user="mom")
+            self.assertEqual(
+                cli_module._resolve_output_dir(args, output_root=output_root),
+                output_root / "mom",
+            )
+
+    def test_user_flag_scopes_generate_and_list_to_that_users_history(self):
+        # --user with no --history-file/--output-dir override resolves against
+        # the *real* data/output roots (that's the whole point -- it's meant
+        # to be usable without spelling out a path every time), so use a
+        # throwaway username and clean up afterward rather than mocking the
+        # roots (already covered directly by the _resolve_* unit tests above).
+        username = "test_cli_user_5f3a"
+        history_path = user_paths.user_history_path(username)
+        output_dir = user_paths.user_output_dir(username)
+        self.addCleanup(lambda: shutil.rmtree(history_path.parent, ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(output_dir, ignore_errors=True))
+
+        rc = cli_main(["generate", "--days", "3", "--seed", "1", "--user", username])
+        self.assertEqual(rc, 0)
+        self.assertTrue(history_path.exists())
+        self.assertEqual(len(History.load(history_path).weeks[0]["days"]), 3)
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            cli_main(["list", "--user", username])
+        self.assertIn("Week 1", stdout.getvalue())
 
     def test_generate_exclude_flags_keep_excluded_names_out_of_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

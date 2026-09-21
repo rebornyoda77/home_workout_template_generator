@@ -3,23 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workout_generator import web_config, web_server
+from workout_generator import user_paths, users, web_server
 from workout_generator.history import History
 
 
 CSRF_RE = re.compile(rb'name="csrf_token" value="([0-9a-f]+)"')
-
-
-class WebConfigTests(unittest.TestCase):
-    def test_passcode_round_trip(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "web_config.json"
-            self.assertFalse(web_config.has_web_passcode(path))
-
-            web_config.set_web_passcode("correct-horse", path)
-            self.assertTrue(web_config.has_web_passcode(path))
-            self.assertTrue(web_config.verify_web_passcode("correct-horse", path))
-            self.assertFalse(web_config.verify_web_passcode("wrong", path))
 
 
 class WebServerTests(unittest.TestCase):
@@ -28,19 +16,21 @@ class WebServerTests(unittest.TestCase):
         self.addCleanup(self.tmp_dir.cleanup)
         tmp_path = Path(self.tmp_dir.name)
 
-        config_path = tmp_path / "web_config.json"
-        web_config.set_web_passcode("test-pass", config_path)
+        self.users_path = tmp_path / "users.json"
+        self.data_root = tmp_path / "data"
+        self.output_root = tmp_path / "output"
+        users.add_user("testuser", "test-pass", "Test User", path=self.users_path)
 
         self.app = web_server.create_app(
-            history_path=tmp_path / "history.json",
-            output_dir=tmp_path / "output",
-            web_config_path=config_path,
+            data_root=self.data_root, output_root=self.output_root, users_path=self.users_path,
         )
         self.app.testing = True
         self.client = self.app.test_client()
 
-    def _login(self):
-        return self.client.post("/login", data={"passcode": "test-pass"}, follow_redirects=True)
+    def _login(self, username="testuser", password="test-pass"):
+        return self.client.post(
+            "/login", data={"username": username, "password": password}, follow_redirects=True,
+        )
 
     def _csrf_from(self, response):
         match = CSRF_RE.search(response.data)
@@ -52,14 +42,75 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.headers["Location"])
 
-    def test_wrong_passcode_is_rejected(self):
-        response = self.client.post("/login", data={"passcode": "nope"})
-        self.assertIn(b"Incorrect passcode", response.data)
+    def test_wrong_password_is_rejected(self):
+        response = self.client.post("/login", data={"username": "testuser", "password": "nope"})
+        self.assertIn(b"Incorrect username or password", response.data)
+
+    def test_unknown_username_is_rejected(self):
+        response = self.client.post("/login", data={"username": "ghost", "password": "whatever"})
+        self.assertIn(b"Incorrect username or password", response.data)
 
     def test_login_then_dashboard_shows_empty_state(self):
         response = self._login()
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"No weeks generated yet", response.data)
+
+    def test_login_page_lists_accounts_by_display_name(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        response = self.client.get("/login")
+        self.assertIn(b'<option value="testuser">Test User</option>', response.data)
+        self.assertIn(b'<option value="otheruser">Other User</option>', response.data)
+
+    def test_login_page_shows_message_when_no_accounts_exist(self):
+        app = web_server.create_app(
+            data_root=self.data_root, output_root=self.output_root,
+            users_path=Path(self.tmp_dir.name) / "empty_users.json",
+        )
+        app.testing = True
+        response = app.test_client().get("/login")
+        self.assertIn(b"No accounts yet", response.data)
+        self.assertIn(b"--add-user", response.data)
+
+    def test_nav_shows_current_user_display_name(self):
+        dashboard = self._login()
+        self.assertIn(b'<span class="current-user">Test User</span>', dashboard.data)
+
+    def test_removed_user_session_is_invalidated(self):
+        self._login()
+        users.remove_user("testuser", path=self.users_path)
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_two_users_have_completely_separate_histories(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+
+        dashboard = self._login("testuser", "test-pass")
+        csrf = self._csrf_from(dashboard)
+        self.client.post("/generate", data={"days": "3", "csrf_token": csrf}, follow_redirects=True)
+        self.client.get("/logout")
+
+        other_dashboard = self._login("otheruser", "other-pass")
+        self.assertIn(b"No weeks generated yet", other_dashboard.data)
+        other_csrf = self._csrf_from(other_dashboard)
+        self.client.post("/generate", data={"days": "4", "csrf_token": other_csrf}, follow_redirects=True)
+
+        other_week = self.client.get("/week/1")
+        self.assertEqual(other_week.status_code, 200)
+        self.assertIn(b"Day 4", other_week.data)
+
+        self.client.get("/logout")
+        self._login("testuser", "test-pass")
+        testuser_week = self.client.get("/week/1")
+        self.assertEqual(testuser_week.status_code, 200)
+        self.assertNotIn(b"Day 4", testuser_week.data)  # testuser's own week 1 was only 3 days
+
+        testuser_history = user_paths.user_history_path("testuser", self.data_root)
+        other_history = user_paths.user_history_path("otheruser", self.data_root)
+        self.assertTrue(testuser_history.exists())
+        self.assertTrue(other_history.exists())
+        self.assertEqual(len(History.load(testuser_history).weeks[0]["days"]), 3)
+        self.assertEqual(len(History.load(other_history).weeks[0]["days"]), 4)
 
     def test_generate_requires_valid_csrf_token(self):
         self._login()
@@ -104,7 +155,7 @@ class WebServerTests(unittest.TestCase):
     def test_logout_returns_to_login(self):
         self._login()
         response = self.client.get("/logout", follow_redirects=True)
-        self.assertIn(b"Passcode", response.data)
+        self.assertIn(b"Log In", response.data)
 
     def _generate_week(self):
         dashboard = self._login()
@@ -510,7 +561,7 @@ class WebServerTests(unittest.TestCase):
             ],
         }
         history.record_week("2026-01-01", [legacy_day])
-        history.save(self.app.config["HISTORY_PATH"])
+        history.save(user_paths.user_history_path("testuser", self.data_root))
 
         self._login()
 

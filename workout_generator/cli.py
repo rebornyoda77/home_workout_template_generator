@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from . import exercises as ex_pool
+from . import user_paths
 from .backup import DEFAULT_KEEP
 from .generate import (
     DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
@@ -15,13 +16,36 @@ COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate")
 
 def _common_paths(parser):
     parser.add_argument(
-        "--history-file", type=Path, default=DEFAULT_HISTORY_PATH,
-        help=f"Path to the history JSON file (default: {DEFAULT_HISTORY_PATH}).",
+        "--history-file", type=Path, default=None,
+        help=f"Path to the history JSON file (default: {DEFAULT_HISTORY_PATH}, or that "
+             "user's own file if --user is given).",
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
-        help=f"Directory holding generated Markdown files (default: {DEFAULT_OUTPUT_DIR}).",
+        "--output-dir", type=Path, default=None,
+        help=f"Directory holding generated Markdown files (default: {DEFAULT_OUTPUT_DIR}, or "
+             "that user's own folder if --user is given).",
     )
+    parser.add_argument(
+        "--user", default=None, metavar="USERNAME",
+        help="Operate on this person's own data instead of the shared default path -- see "
+             "docs/user_guide.md. Ignored if --history-file/--output-dir are also given.",
+    )
+
+
+def _resolve_history_file(args, data_root: Path = user_paths.DEFAULT_DATA_ROOT) -> Path:
+    if args.history_file is not None:
+        return args.history_file
+    if getattr(args, "user", None):
+        return user_paths.user_history_path(args.user, data_root=data_root)
+    return DEFAULT_HISTORY_PATH
+
+
+def _resolve_output_dir(args, output_root: Path = user_paths.DEFAULT_OUTPUT_ROOT) -> Path:
+    if getattr(args, "output_dir", None) is not None:
+        return args.output_dir
+    if getattr(args, "user", None):
+        return user_paths.user_output_dir(args.user, output_root=output_root)
+    return DEFAULT_OUTPUT_DIR
 
 
 def _exclusion_args(parser):
@@ -102,8 +126,13 @@ def build_arg_parser():
 
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
-        "--history-file", type=Path, default=DEFAULT_HISTORY_PATH,
-        help=f"Path to the history JSON file (default: {DEFAULT_HISTORY_PATH}).",
+        "--history-file", type=Path, default=None,
+        help=f"Path to the history JSON file (default: {DEFAULT_HISTORY_PATH}, or that "
+             "user's own file if --user is given).",
+    )
+    backups_parser.add_argument(
+        "--user", default=None, metavar="USERNAME",
+        help="Operate on this person's own data instead of the shared default path.",
     )
 
     return parser
@@ -118,10 +147,11 @@ def _normalize_argv(argv):
 
 
 def _cmd_generate(args) -> int:
+    history_file = _resolve_history_file(args)
     week, markdown, out_path = generate_week(
         args.days,
-        history_path=args.history_file,
-        output_dir=args.output_dir,
+        history_path=history_file,
+        output_dir=_resolve_output_dir(args),
         avoid_weeks=args.avoid_weeks,
         seed=args.seed,
         save=not args.dry_run,
@@ -132,7 +162,7 @@ def _cmd_generate(args) -> int:
     _warn_exclusion_violations(args, week)
     if out_path is not None:
         print(f"Saved to {out_path}", file=sys.stderr)
-        print(f"History updated at {args.history_file}", file=sys.stderr)
+        print(f"History updated at {history_file}", file=sys.stderr)
     return 0
 
 
@@ -148,7 +178,7 @@ def _warn_exclusion_violations(args, week: dict) -> None:
 
 
 def _cmd_list(args) -> int:
-    history = History.load(args.history_file)
+    history = History.load(_resolve_history_file(args))
     if not history.weeks:
         print("No weeks generated yet.")
         return 0
@@ -164,7 +194,7 @@ def _cmd_list(args) -> int:
 
 
 def _cmd_delete(args) -> int:
-    removed = delete_week(args.week, history_path=args.history_file, output_dir=args.output_dir)
+    removed = delete_week(args.week, history_path=_resolve_history_file(args), output_dir=_resolve_output_dir(args))
     if not removed:
         print(f"Week {args.week} doesn't exist.", file=sys.stderr)
         return 1
@@ -173,10 +203,11 @@ def _cmd_delete(args) -> int:
 
 
 def _cmd_regenerate(args) -> int:
+    history_file = _resolve_history_file(args)
     result = regenerate_week(
         args.week,
-        history_path=args.history_file,
-        output_dir=args.output_dir,
+        history_path=history_file,
+        output_dir=_resolve_output_dir(args),
         num_days=args.days,
         avoid_weeks=args.avoid_weeks,
         seed=args.seed,
@@ -193,13 +224,13 @@ def _cmd_regenerate(args) -> int:
     _warn_exclusion_violations(args, week)
     if out_path is not None:
         print(f"Saved to {out_path}", file=sys.stderr)
-        print(f"History updated at {args.history_file}", file=sys.stderr)
+        print(f"History updated at {history_file}", file=sys.stderr)
     return 0
 
 
 def _cmd_rate(args) -> int:
     rating = None if args.clear else args.stars
-    updated = rate_week(args.week, rating, history_path=args.history_file)
+    updated = rate_week(args.week, rating, history_path=_resolve_history_file(args))
     if not updated:
         print(f"Week {args.week} doesn't exist.", file=sys.stderr)
         return 1
@@ -208,7 +239,7 @@ def _cmd_rate(args) -> int:
 
 
 def _cmd_backups(args) -> int:
-    history_path = Path(args.history_file)
+    history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
     files = sorted(backups_dir.glob(f"{history_path.stem}_*.json")) if backups_dir.exists() else []
     if not files:
