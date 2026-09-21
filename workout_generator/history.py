@@ -10,12 +10,10 @@ import math
 from datetime import date
 from pathlib import Path
 
+from . import exercises as ex_pool
+
 
 DEFAULT_HISTORY_PATH = Path(__file__).resolve().parent.parent / "data" / "history.json"
-
-
-def _exercise_name(exercise) -> str:
-    return exercise["name"] if isinstance(exercise, dict) else exercise.name
 
 
 class History:
@@ -157,7 +155,7 @@ class History:
             for day in week["days"]:
                 for block in day["blocks"]:
                     for exercise in block["exercises"]:
-                        name = _exercise_name(exercise)
+                        name = ex_pool.exercise_name(exercise)
                         self.last_used[name] = wi
                         self.use_count[name] = self.use_count.get(name, 0) + 1
 
@@ -184,9 +182,16 @@ class History:
         """Records what actually happened on one day of a generated week:
         whether it was completed, free-text notes, and per-exercise "actual"
         (what was really used, e.g. "20 lb x10") + "feel" (easy/right/hard).
+        `exercise_logs` can also carry a "load_hint" -- unlike actual/feel
+        (a log of what happened that session), this edits the *prescribed*
+        load stored on this week's own copy of the exercise, e.g. so a week
+        copied from someone else's history (see generate.copy_week) can be
+        retargeted to different weights/reps without touching the shared
+        exercise pool or the account it was copied from.
         Any argument left as None is left unchanged. `exercise_logs` maps
-        (block_index, exercise_index) -> {"actual": str, "feel": str}.
-        Returns True if the week/day existed and was updated."""
+        (block_index, exercise_index) -> {"actual": str, "feel": str,
+        "load_hint": str}. Returns True if the week/day existed and was
+        updated."""
         week = self.week_by_index(week_index)
         if week is None or not (0 <= day_index < len(week["days"])):
             return False
@@ -213,6 +218,8 @@ class History:
                 exercise["actual"] = log["actual"]
             if "feel" in log:
                 exercise["feel"] = log["feel"]
+            if "load_hint" in log:
+                exercise["load_hint"] = log["load_hint"]
         return True
 
     def completed_dates(self) -> list:

@@ -50,6 +50,10 @@ python main.py regenerate --week 3 --exclude-pattern push_vertical --exclude-pat
 python main.py generate --deload           # force this week to be a deload week
 python main.py generate --no-deload        # force it to be a normal week instead
 
+# copy a week's full plan into someone else's history, as a fresh week --
+# e.g. give a spouse the same exercises you're doing, for them to retarget:
+python main.py copy --week 3 --user dad --to mom
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -96,6 +100,31 @@ web UI's own "Deload / recovery week" override, on both the generate and
 regenerate forms) force this week to be one, or not, regardless of where it
 falls in that schedule; `list` and the web UI both flag a deload week
 wherever it shows up.
+
+`python main.py copy --week N --user <source> --to <target>` copies week
+N's exact plan -- every day, block, and exercise -- from `<source>`'s
+history into `<target>`'s, landing as a brand-new week at the end of
+`<target>`'s own sequence (their own next week number, not necessarily
+`N`). It's for e.g. a spouse who wants to do the same exercises without
+generating their own random pick: completion, notes, and any logged
+actual/feel reset (it's a fresh plan for them), but each exercise's
+prescribed load carries over as-is, ready for them to retarget in the web
+UI. The copy is a fully independent snapshot from that moment -- editing
+either person's copy afterward, including its `load_hint`, never touches
+the other's. Copying also updates the target's own freshness tracking, so
+their next real `generate` treats these exercises as freshly used, same as
+if they'd generated the week themselves. In the web UI, every week page has
+a "Copy to..." picker (of every other account) and a Copy This Week button;
+no CLI/web equivalent exists for the reverse (pulling *from* the target),
+since copying is directional -- just swap `--user`/`--to`.
+
+Every exercise's prescribed load (the text next to its name, e.g. "2x DB,
+15-25 lb each") is directly editable in the web UI, inline, as part of the
+same log form used for completion/notes/actual/feel -- click it and type,
+same "Save Log" button. It's a plain edit to that one week's own stored
+copy of the exercise (the same independence `copy` above relies on):
+editing it never touches the shared exercise pool, any other week, or
+anyone else's account.
 
 Every `generate`/`regenerate`/`delete` also snapshots that history file
 into a `backups/` folder right next to it (`data/backups/`, or
@@ -187,15 +216,20 @@ pattern for the week (see `--exclude-pattern` above), and a collapsible
 "Deload / recovery week" select (Auto / Yes / No) to override that week's
 auto-detected deload status (see `--deload`/`--no-deload` above) -- a
 deload week shows a small "Deload Week" badge next to its heading on the
-Dashboard, week page, Today's Workout, and in the History table.
+Dashboard, week page, Today's Workout, and in the History table. If any
+other accounts exist, the week page also has a "Copy to..." picker and a
+Copy This Week button (see `copy` above).
 
 Every day on the Dashboard/week page also has a log form right under it:
-a "Mark this day complete" checkbox, a free-text "what did you actually do"
-+ a quick "too easy / just right / too hard" pick per exercise, and a notes
-field -- "Save Log" persists it to that day's entry in your account's own
-`history.json` (also picked up by `python main.py list --user <name>`/
-`backups`, and backed up like
-everything else). A completed day gets a badge next to its title.
+a "Mark this day complete" checkbox, an editable prescribed-load field per
+exercise (click the load text next to its name, e.g. "2x DB, 15-25 lb
+each", and type -- see `copy`/load_hint above for why this is safe to
+change), a free-text "what did you actually do" + a quick "too easy / just
+right / too hard" pick per exercise, and a notes field -- "Save Log"
+persists it all to that day's entry in your account's own `history.json`
+(also picked up by `python main.py list --user <name>`/`backups`, and
+backed up like everything else). A completed day gets a badge next to its
+title.
 
 The first time you mark a day complete, it's stamped with today's date --
 once there's at least one, the Dashboard shows a small streak panel above

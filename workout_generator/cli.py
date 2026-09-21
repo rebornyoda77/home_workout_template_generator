@@ -4,15 +4,16 @@ from pathlib import Path
 
 from . import exercises as ex_pool
 from . import user_paths
+from . import users
 from .backup import DEFAULT_KEEP
 from .generate import (
-    DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
+    DEFAULT_OUTPUT_DIR, copy_week, delete_week, find_exclusion_violations, generate_week,
     rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
 from .week_builder import DELOAD_INTERVAL_WEEKS
 
-COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks")
+COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy")
 
 
 def _common_paths(parser):
@@ -151,6 +152,14 @@ def build_arg_parser():
     streaks_parser = sub.add_parser("streaks", help="Show current/longest day-completion streaks.")
     _common_paths(streaks_parser)
 
+    copy_parser = sub.add_parser("copy", help="Copy a generated week's full plan into another person's history.")
+    copy_parser.add_argument("--week", type=int, required=True, help="Week number to copy (from the source).")
+    copy_parser.add_argument(
+        "--to", required=True, metavar="USERNAME",
+        help="Account to copy this week's plan into, as a brand-new week in their own sequence.",
+    )
+    _common_paths(copy_parser)
+
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
         "--history-file", type=Path, default=None,
@@ -277,6 +286,29 @@ def _cmd_streaks(args) -> int:
     return 0
 
 
+def _cmd_copy(args) -> int:
+    if getattr(args, "user", None) and users.normalize_username(args.user) == users.normalize_username(args.to):
+        print("--to must be a different account than --user.", file=sys.stderr)
+        return 1
+
+    result = copy_week(
+        args.week,
+        source_history_path=_resolve_history_file(args),
+        target_history_path=user_paths.user_history_path(args.to),
+        target_output_dir=user_paths.user_output_dir(args.to),
+    )
+    if result is None:
+        print(f"Week {args.week} doesn't exist.", file=sys.stderr)
+        return 1
+
+    week, markdown, out_path = result
+    print(markdown)
+    print(f"Copied to {args.to}'s history as their Week {week['week_index']}.", file=sys.stderr)
+    if out_path is not None:
+        print(f"Saved to {out_path}", file=sys.stderr)
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
@@ -297,6 +329,7 @@ _HANDLERS = {
     "regenerate": _cmd_regenerate,
     "rate": _cmd_rate,
     "streaks": _cmd_streaks,
+    "copy": _cmd_copy,
     "backups": _cmd_backups,
 }
 

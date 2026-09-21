@@ -42,7 +42,13 @@
             <span class="exercise-name">{{ exercise.name }}{{ ' (each side)' if exercise.unilateral else '' }}</span>
             {% if exercise.note %}<span class="exercise-note">{{ exercise.note }}</span>{% endif %}
           </span>
+          {% if block.type not in ('warmup', 'cooldown') %}
+          <input type="text" class="exercise-load-input" name="load_b{{ block_index }}_e{{ loop.index0 }}"
+                 value="{{ exercise.load_hint }}" aria-label="Prescribed load for {{ exercise.name }}"
+                 title="Edit the prescribed load -- e.g. to your own comfortable weight">
+          {% else %}
           <span class="exercise-load">{{ exercise.load_hint }}</span>
+          {% endif %}
         </div>
         {% if block.type not in ('warmup', 'cooldown') %}
         {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}

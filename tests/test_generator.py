@@ -56,6 +56,13 @@ class ExercisePoolTests(unittest.TestCase):
         for pattern in ex_pool.ALL_PATTERNS:
             self.assertIn(pattern, ex_pool.PATTERN_LABELS)
 
+    def test_exercise_name_reads_a_live_dataclass_instance(self):
+        exercise = ex_pool.by_pattern(ex_pool.SQUAT)[0]
+        self.assertEqual(ex_pool.exercise_name(exercise), exercise.name)
+
+    def test_exercise_name_reads_a_serialized_dict(self):
+        self.assertEqual(ex_pool.exercise_name({"name": "Goblet Squat", "load_hint": "x"}), "Goblet Squat")
+
 
 class HistoryTests(unittest.TestCase):
     def test_unused_exercise_is_maximally_stale(self):
@@ -169,6 +176,25 @@ class HistoryTests(unittest.TestCase):
         exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
         self.assertEqual(exercise["actual"], "20 lb x10")
         self.assertEqual(exercise["feel"], "easy")
+
+    def test_update_day_log_edits_the_prescribed_load_hint(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        updated = history.update_day_log(1, 0, exercise_logs={(1, 0): {"load_hint": "1x DB, 10 lb"}})
+        self.assertTrue(updated)
+
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["load_hint"], "1x DB, 10 lb")
+
+    def test_update_day_log_load_hint_is_independent_of_actual_and_feel(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, exercise_logs={(1, 0): {"load_hint": "1x DB, 10 lb", "actual": "10 lb x12"}})
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["load_hint"], "1x DB, 10 lb")
+        self.assertEqual(exercise["actual"], "10 lb x12")
 
     def test_update_day_log_leaves_unspecified_fields_untouched(self):
         history = History()
@@ -874,6 +900,16 @@ class WeekBuilderTests(unittest.TestCase):
         self.assertFalse(set(names) & warmup_names)
         self.assertFalse(set(names) & cooldown_names)
 
+    def test_exercise_names_also_works_on_an_already_serialized_day(self):
+        # build_week calls this on the live (dataclass-exercise) shape;
+        # generate.copy_week calls it on a day already loaded back from
+        # history (plain-dict exercises) -- both must produce the same names.
+        history = History()
+        week = build_week(3, history, rng=random.Random(19), generated_at="2026-09-20")
+        live_day = week["days"][0]
+        serialized_day = history.week_by_index(1)["days"][0]
+        self.assertEqual(exercise_names(live_day), exercise_names(serialized_day))
+
     def test_every_day_opens_with_a_warmup_and_closes_with_a_cooldown(self):
         history = History()
         week = build_week(3, history, rng=random.Random(17), generated_at="2026-09-20")
@@ -1314,6 +1350,180 @@ class GenerateModuleTests(unittest.TestCase):
                 self.assertIn(name, excluded)
 
 
+class CopyWeekTests(unittest.TestCase):
+    def test_copy_week_lands_as_a_new_week_in_the_target_sequence(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            dad_output = Path(tmp_dir) / "dad_output"
+            mom_output = Path(tmp_dir) / "mom_output"
+
+            generate_module.generate_week(4, history_path=source_path, output_dir=dad_output, seed=1)  # dad's week 1
+            source_week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=dad_output, seed=2,
+            )  # dad's week 2
+            generate_module.generate_week(3, history_path=target_path, output_dir=mom_output, seed=3)  # mom's own week 1
+
+            result = generate_module.copy_week(
+                source_week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=mom_output,
+            )
+            self.assertIsNotNone(result)
+            copied_week, markdown, out_path = result
+
+            # lands as mom's own next week (2), not dad's week_index (2, coincidentally the same here)
+            self.assertEqual(copied_week["week_index"], 2)
+            self.assertIn("Week 2", markdown)
+            self.assertTrue(out_path.exists())
+
+            target_history = History.load(target_path)
+            self.assertEqual(len(target_history.weeks), 2)
+            source_history = History.load(source_path)
+            self.assertEqual(len(source_history.weeks), 2)  # dad's history untouched
+
+    def test_copy_week_returns_none_for_unknown_source_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            generate_module.generate_week(4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1)
+
+            result = generate_module.copy_week(
+                999, source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+            self.assertIsNone(result)
+
+    def test_copy_week_copies_the_same_exercises_and_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            source_week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1,
+            )
+
+            copied_week, _md, _out = generate_module.copy_week(
+                source_week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+
+            source_titles = [d["title"] for d in source_week["days"]]
+            copied_titles = [d["title"] for d in copied_week["days"]]
+            self.assertEqual(source_titles, copied_titles)
+
+            def names(week):
+                return sorted(
+                    e.name if hasattr(e, "name") else e["name"]
+                    for day in week["days"] for block in day["blocks"] for e in block["exercises"]
+                )
+
+            self.assertEqual(names(source_week), names(copied_week))
+
+    def test_copy_week_resets_completion_and_logs_but_keeps_load_hint(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1,
+            )
+
+            generate_module.log_day(
+                week["week_index"], 0, history_path=source_path,
+                completed=True, notes="crushed it",
+                exercise_logs={(1, 0): {"actual": "25 lb x10", "feel": "easy", "load_hint": "1x DB, 25 lb"}},
+            )
+
+            copied_week, _md, _out = generate_module.copy_week(
+                week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+            copied_day = copied_week["days"][0]
+            self.assertFalse(copied_day["completed"])
+            self.assertEqual(copied_day["notes"], "")
+            self.assertEqual(copied_day["completed_at"], "")
+
+            copied_exercise = copied_day["blocks"][1]["exercises"][0]
+            self.assertEqual(copied_exercise["actual"], "")
+            self.assertEqual(copied_exercise["feel"], "")
+            self.assertEqual(copied_exercise["load_hint"], "1x DB, 25 lb")  # carried over
+
+    def test_copy_week_does_not_mutate_the_source_weeks_logs(self):
+        # editing the target's copy afterward must never leak back to the source
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1,
+            )
+
+            generate_module.copy_week(
+                week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+            generate_module.log_day(
+                1, 0, history_path=target_path,
+                exercise_logs={(1, 0): {"load_hint": "mom's own weight"}},
+            )
+
+            source_history = History.load(source_path)
+            source_exercise = source_history.week_by_index(week["week_index"])["days"][0]["blocks"][1]["exercises"][0]
+            self.assertNotEqual(source_exercise["load_hint"], "mom's own weight")
+
+    def test_copy_week_updates_target_freshness_tracking(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1,
+            )
+
+            generate_module.copy_week(
+                week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+
+            target_history = History.load(target_path)
+            copied_names = {
+                e.name if hasattr(e, "name") else e["name"]
+                for day in week["days"] for block in day["blocks"]
+                if block["type"] not in ("warmup", "cooldown")
+                for e in block["exercises"]
+            }
+            for name in copied_names:
+                self.assertIn(name, target_history.last_used)
+                self.assertEqual(target_history.last_used[name], 1)
+
+    def test_copy_week_carries_over_deload_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1, deload=True,
+            )
+
+            copied_week, _md, _out = generate_module.copy_week(
+                week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=Path(tmp_dir) / "mom_output",
+            )
+            self.assertTrue(copied_week["deload"])
+
+    def test_copy_week_dry_run_does_not_write_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_path = Path(tmp_dir) / "dad_history.json"
+            target_path = Path(tmp_dir) / "mom_history.json"
+            target_output_dir = Path(tmp_dir) / "mom_output"
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=source_path, output_dir=Path(tmp_dir) / "dad_output", seed=1,
+            )
+
+            result = generate_module.copy_week(
+                week["week_index"], source_history_path=source_path, target_history_path=target_path,
+                target_output_dir=target_output_dir, save=False,
+            )
+            self.assertIsNotNone(result)
+            self.assertFalse(target_path.exists())
+            self.assertFalse(target_output_dir.exists())
+
+
 class CliTests(unittest.TestCase):
     def test_dry_run_does_not_write_history_or_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1565,6 +1775,57 @@ class CliTests(unittest.TestCase):
             with redirect_stdout(stdout):
                 cli_main(["list", *common])
             self.assertIn("deload week", stdout.getvalue())
+
+    def test_copy_subcommand_copies_a_week_into_another_users_history(self):
+        source_username = "test_cli_copy_src_a1b2"
+        target_username = "test_cli_copy_dst_c3d4"
+        source_history_path = user_paths.user_history_path(source_username)
+        target_history_path = user_paths.user_history_path(target_username)
+        self.addCleanup(lambda: shutil.rmtree(source_history_path.parent, ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(target_history_path.parent, ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(user_paths.user_output_dir(source_username), ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(user_paths.user_output_dir(target_username), ignore_errors=True))
+
+        cli_main(["generate", "--days", "3", "--seed", "1", "--user", source_username])
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = cli_main(["copy", "--week", "1", "--user", source_username, "--to", target_username])
+        self.assertEqual(rc, 0)
+
+        target_history = History.load(target_history_path)
+        self.assertEqual(len(target_history.weeks), 1)
+        self.assertEqual(len(target_history.week_by_index(1)["days"]), 3)
+
+    def test_copy_subcommand_rejects_copying_to_the_same_account(self):
+        username = "test_cli_copy_self_e5f6"
+        history_path = user_paths.user_history_path(username)
+        self.addCleanup(lambda: shutil.rmtree(history_path.parent, ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(user_paths.user_output_dir(username), ignore_errors=True))
+
+        cli_main(["generate", "--days", "3", "--seed", "1", "--user", username])
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli_main(["copy", "--week", "1", "--user", username, "--to", username])
+        self.assertEqual(rc, 1)
+        self.assertIn("different account", stderr.getvalue())
+
+    def test_copy_subcommand_reports_missing_source_week(self):
+        source_username = "test_cli_copy_missing_g7h8"
+        target_username = "test_cli_copy_missing_target_i9j0"
+        self.addCleanup(
+            lambda: shutil.rmtree(user_paths.user_history_path(source_username).parent, ignore_errors=True)
+        )
+        self.addCleanup(
+            lambda: shutil.rmtree(user_paths.user_history_path(target_username).parent, ignore_errors=True)
+        )
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli_main(["copy", "--week", "999", "--user", source_username, "--to", target_username])
+        self.assertEqual(rc, 1)
+        self.assertIn("doesn't exist", stderr.getvalue())
 
     def test_streaks_subcommand_reports_current_and_longest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

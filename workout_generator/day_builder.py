@@ -102,10 +102,15 @@ def exercise_names(day):
     """Names used for history's freshness/staleness bookkeeping -- excludes
     warm-up/cooldown blocks, since those are fixed content outside the
     trackable exercise pool (see blocks.py), not exercises to avoid
-    repeating week to week."""
+    repeating week to week. Works on a freshly built day (Exercise dataclass
+    instances) or an already-serialized one loaded back from history (plain
+    dicts) -- build_week calls this on the former right after building each
+    day; copying a week into another account (see generate.copy_week) calls
+    it on the latter, to stamp the copy into the target's own freshness
+    tracking exactly as if they'd generated it themselves."""
     names = []
     for block in day["blocks"]:
         if block["type"] in ("warmup", "cooldown"):
             continue
-        names.extend(e.name for e in block["exercises"])
+        names.extend(ex_pool.exercise_name(e) for e in block["exercises"])
     return names

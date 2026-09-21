@@ -3,11 +3,14 @@ both the CLI (main.py) and the Flask web interface, so the two never drift
 apart.
 """
 
+import copy
 import random
+from datetime import date
 from pathlib import Path
 
 from . import exercises as ex_pool
 from .backup import backup_history
+from .day_builder import exercise_names
 from .formatter import week_to_markdown
 from .history import DEFAULT_HISTORY_PATH, History
 from .week_builder import build_week
@@ -84,6 +87,70 @@ def generate_week(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"week-{week['week_index']:02d}-{week['generated_at']}.md"
+        output_path.write_text(markdown, encoding="utf-8")
+
+    return week, markdown, output_path
+
+
+def copy_week(
+    source_week_index: int,
+    *,
+    source_history_path: Path,
+    target_history_path: Path,
+    target_output_dir: Path = DEFAULT_OUTPUT_DIR,
+    save: bool = True,
+):
+    """Copies a week's full plan -- every day, block, and exercise, exactly
+    as scheduled -- from one person's history into another's, as a brand
+    new week at the end of the target's own sequence (their own next
+    week_index, not the source's). Meant for e.g. a spouse wanting the same
+    exercises their partner is doing, then adjusting load_hint per exercise
+    to their own comfort (see History.update_day_log's `load_hint` --
+    that's a plain per-week-copy edit, so it never touches the source
+    account's own week or the shared exercise pool).
+
+    Completion/logging fields (completed, notes, actual, feel) are reset,
+    since this is a fresh plan for the target, not something they've
+    already done -- but load_hint (the prescribed load) carries over
+    as-is, since that's the whole point of copying someone else's plan.
+    The target's own freshness/staleness tracking is updated too, exactly
+    as if they'd generated this week themselves, so their own next
+    `generate` run treats these exercises as freshly used.
+
+    Returns (week, markdown, output_path) -- the same shape as
+    generate_week/regenerate_week -- or None if the source week doesn't
+    exist. output_path is None when save=False."""
+    source_history = History.load(source_history_path)
+    source_week = source_history.week_by_index(source_week_index)
+    if source_week is None:
+        return None
+
+    days = copy.deepcopy(source_week["days"])
+    for day in days:
+        day["completed"] = False
+        day["completed_at"] = ""
+        day["notes"] = ""
+        for block in day["blocks"]:
+            for exercise in block["exercises"]:
+                exercise["actual"] = ""
+                exercise["feel"] = ""
+
+    target_history = History.load(target_history_path)
+    week_index = target_history.begin_week()
+    for day in days:
+        target_history.record_day(day["title"], exercise_names(day))
+    generated_at = date.today().isoformat()
+    target_history.record_week(generated_at, days, deload=bool(source_week.get("deload")))
+    week = target_history.week_by_index(week_index)
+    markdown = week_to_markdown(week)
+
+    output_path = None
+    if save:
+        target_history.save(target_history_path)
+        backup_history(target_history_path)
+        target_output_dir = Path(target_output_dir)
+        target_output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = target_output_dir / f"week-{week['week_index']:02d}-{week['generated_at']}.md"
         output_path.write_text(markdown, encoding="utf-8")
 
     return week, markdown, output_path

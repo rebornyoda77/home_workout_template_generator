@@ -15,7 +15,7 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 from . import exercises as ex_pool
 from . import users
 from .generate import (
-    delete_week, find_exclusion_violations, generate_week,
+    copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import History
@@ -190,10 +190,14 @@ def create_app(
         entry = history.week_by_index(week_index)
         if entry is None:
             return "That week hasn't been generated.", 404
+        other_accounts = [
+            a for a in users.list_users(app.config["USERS_PATH"]) if a["username"] != session["username"]
+        ]
         return render_template(
             "week.html", active_page="weeks", week=entry,
             suggestions=_exercise_suggestions(history, entry),
             pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
+            other_accounts=other_accounts,
         )
 
     @app.route("/week/<int:week_index>/delete", methods=["POST"])
@@ -211,6 +215,34 @@ def create_app(
         else:
             flash(f"Week {week_index} doesn't exist.")
         return redirect(url_for("history_page"))
+
+    @app.route("/week/<int:week_index>/copy", methods=["POST"])
+    def copy_week_route(week_index: int):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        target_username = users.normalize_username(request.form.get("target_username", ""))
+        if not target_username or not users.user_exists(target_username, app.config["USERS_PATH"]):
+            flash("Pick a valid account to copy this week to.")
+            return redirect(url_for("view_week", week_index=week_index))
+        if target_username == session["username"]:
+            flash("Pick a different account to copy this week to.")
+            return redirect(url_for("view_week", week_index=week_index))
+
+        result = copy_week(
+            week_index,
+            source_history_path=_history_path(),
+            target_history_path=user_history_path(target_username, app.config["DATA_ROOT"]),
+            target_output_dir=user_output_dir(target_username, app.config["OUTPUT_ROOT"]),
+        )
+        if result is None:
+            flash(f"Week {week_index} doesn't exist.")
+            return redirect(url_for("history_page"))
+
+        new_week, _markdown, _out_path = result
+        target_display_name = users.display_name_for(target_username, app.config["USERS_PATH"])
+        flash(f"Copied Week {week_index} to {target_display_name} as their Week {new_week['week_index']}.")
+        return redirect(url_for("view_week", week_index=week_index))
 
     @app.route("/week/<int:week_index>/regenerate", methods=["POST"])
     def regenerate_week_route(week_index: int):
@@ -295,11 +327,17 @@ def create_app(
             for ei in range(len(block["exercises"])):
                 actual = request.form.get(f"actual_b{bi}_e{ei}")
                 feel = request.form.get(f"feel_b{bi}_e{ei}")
-                if actual is not None or feel is not None:
-                    exercise_logs[(bi, ei)] = {
-                        "actual": (actual or "").strip(),
-                        "feel": feel if feel in ("easy", "right", "hard") else "",
-                    }
+                load_hint = request.form.get(f"load_b{bi}_e{ei}")
+                if actual is None and feel is None and load_hint is None:
+                    continue
+                log = {}
+                if actual is not None:
+                    log["actual"] = actual.strip()
+                if feel is not None:
+                    log["feel"] = feel if feel in ("easy", "right", "hard") else ""
+                if load_hint is not None:
+                    log["load_hint"] = load_hint.strip()
+                exercise_logs[(bi, ei)] = log
 
         log_day(
             week_index, day_index,

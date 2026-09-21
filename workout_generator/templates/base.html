@@ -62,6 +62,12 @@
   .exercise-row { display: flex; justify-content: space-between; gap: 10px; }
   .exercise-name { font-weight: 500; }
   .exercise-load { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+  .exercise-load-input {
+    width: 130px; flex: 0 0 auto; text-align: right; padding: 3px 8px; font-size: 12.5px;
+    color: var(--text-muted); background: transparent; border-color: transparent;
+  }
+  .exercise-load-input:hover, .exercise-load-input:focus { color: var(--text); background: var(--surface); border-color: var(--border-strong); }
+  .today-exercise-list .exercise-load-input { width: 150px; font-size: 14px; padding: 6px 9px; }
   .exercise-note { color: var(--text-muted); font-size: 11.5px; font-style: italic; display: block; }
   .exercise-suggestion { margin: 3px 0 0; font-size: 12px; color: var(--accent-hover); }
   .glossary-item .exercise-suggestion { margin-top: 6px; }
@@ -153,9 +159,11 @@
     background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(255, 106, 19, .35);
   }
   .save-button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-  .week-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 24px; }
+  .week-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 24px; align-items: flex-start; }
   .inline-form { display: inline-block; margin: 0; }
   .inline-form button { margin-top: 0; }
+  .copy-week-form { display: flex; gap: 6px; }
+  .copy-week-form select { width: 150px; padding: 8px 9px; font-size: 13.5px; }
   .row-actions { white-space: nowrap; }
   .row-actions .inline-form { margin-left: 6px; }
   .danger-button { color: var(--danger); border-color: var(--border-strong); }
@@ -184,6 +192,7 @@
     main.content-wrap { padding: 16px 12px 40px; }
     .panel { padding: 16px; }
     .exercise-row { flex-direction: column; gap: 0; }
+    .exercise-load-input { width: 100%; text-align: left; margin-top: 2px; }
     .log-row { flex-direction: column; }
     .log-feel { max-width: none; }
   }
@@ -198,6 +207,7 @@
     .day-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
     .block-structure { color: #333; }
     .exercise-load, .exercise-note { color: #333; }
+    .exercise-load-input { border: none; background: none; color: #333; padding: 0; }
     a { color: inherit; text-decoration: none; }
     .tag { border: 1px solid #999; background: none; color: #333; }
     /* the day's plan lives inside the log form, but the interactive

@@ -222,6 +222,96 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertIn(b"doesn&#39;t exist", response.data)
 
+    def test_week_page_hides_copy_form_when_no_other_accounts_exist(self):
+        week_response = self._generate_week()
+        self.assertNotIn(b"target_username", week_response.data)
+
+    def test_week_page_offers_a_copy_form_when_other_accounts_exist(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        self.assertIn(b'name="target_username"', week_response.data)
+        self.assertIn(b'<option value="wife">Wife</option>', week_response.data)
+        self.assertNotIn(b'<option value="testuser">', week_response.data)  # never offer copying to yourself
+
+    def test_copy_week_requires_valid_csrf_token(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        self._generate_week()
+        response = self.client.post("/week/1/copy", data={"csrf_token": "bogus", "target_username": "wife"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_copy_week_to_another_account(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "wife"}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Copied Week 1 to Wife as their Week 1", response.data)
+
+        wife_history = History.load(user_paths.user_history_path("wife", self.data_root))
+        self.assertEqual(len(wife_history.weeks), 1)
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertEqual(len(testuser_history.weeks), 1)  # copying doesn't touch the source
+
+    def test_copy_week_uses_the_same_exercises_editable_independently(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post("/week/1/copy", data={"csrf_token": csrf, "target_username": "wife"})
+
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        wife_history = History.load(user_paths.user_history_path("wife", self.data_root))
+        my_names = [e["name"] for d in testuser_history.weeks[0]["days"] for b in d["blocks"] for e in b["exercises"]]
+        wife_names = [e["name"] for d in wife_history.weeks[0]["days"] for b in d["blocks"] for e in b["exercises"]]
+        self.assertEqual(my_names, wife_names)
+
+        # wife can now retarget her own copy's load without touching mine
+        self.client.get("/logout")
+        self._login("wife", "wife-pass")
+        wife_week = self.client.get("/week/1")
+        wife_csrf = self._csrf_from(wife_week)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": wife_csrf, "load_b1_e0": "wife's own weight"},
+        )
+
+        wife_history_after = History.load(user_paths.user_history_path("wife", self.data_root))
+        testuser_history_after = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertEqual(
+            wife_history_after.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]["load_hint"],
+            "wife's own weight",
+        )
+        self.assertNotEqual(
+            testuser_history_after.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]["load_hint"],
+            "wife's own weight",
+        )
+
+    def test_copy_week_rejects_copying_to_yourself(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "testuser"}, follow_redirects=True,
+        )
+        self.assertIn(b"different account", response.data)
+
+    def test_copy_week_rejects_an_unknown_target(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "ghost"}, follow_redirects=True,
+        )
+        self.assertIn(b"valid account", response.data)
+
+    def test_copy_unknown_week_flashes_message(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        response = self.client.post(
+            "/week/999/copy", data={"csrf_token": csrf, "target_username": "wife"}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
     def test_rate_week_requires_valid_csrf_token(self):
         self._generate_week()
         response = self.client.post("/week/1/rate", data={"rating": "4", "csrf_token": "bogus"})
@@ -372,7 +462,9 @@ class WebServerTests(unittest.TestCase):
         # block 1 (Block A) is the first block that does.
         self.assertIn(b'name="actual_b1_e0"', week_response.data)
         self.assertIn(b'name="feel_b1_e0"', week_response.data)
+        self.assertIn(b'name="load_b1_e0"', week_response.data)
         self.assertNotIn(b'name="actual_b0_e0"', week_response.data)
+        self.assertNotIn(b'name="load_b0_e0"', week_response.data)
 
     def test_week_page_shows_warmup_and_cooldown_with_a_timer_but_no_log_fields(self):
         week_response = self._generate_week()
@@ -414,6 +506,22 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"Completed", response.data)  # the day-card badge
         self.assertIn(b"solid session", response.data)
         self.assertIn(b'value="20 lb x10"', response.data)  # not just the input's placeholder text
+
+    def test_log_day_edits_the_prescribed_load(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "load_b1_e0": "1x DB, 10 lb -- comfortable for me"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'value="1x DB, 10 lb -- comfortable for me"', response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["load_hint"], "1x DB, 10 lb -- comfortable for me")
 
     def test_log_day_unchecked_completed_box_clears_it(self):
         week_response = self._generate_week()
