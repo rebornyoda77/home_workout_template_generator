@@ -62,6 +62,8 @@ python main.py log --week 3 --day 2 --incomplete                      # undo tha
 
 python main.py balance                  # movement-pattern usage counts, lifetime (ASCII bars)
 
+python main.py family                   # household summary: every account's this-week completions/streaks
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -255,8 +257,12 @@ plus a Push-vs-Pull total -- patterns that show up in every training day
 regardless of which templates get picked, like the core finisher and the
 bag round, are tagged "every day" so their bar isn't misread as a rotation
 choice; CLI parity: `python main.py balance`, the same counts as ASCII
-bars), and **Presets** (create/delete named movement-pattern exclusion
-presets -- see above). Print
+bars), **Family** (every account's this-week completed-day count and
+current/longest streak, side by side, sorted busiest-first -- so anyone
+sharing the install can see how everyone's doing without logging in as
+them; your own row is tagged "You". CLI parity: `python main.py family`,
+the same numbers as a plain table), and **Presets** (create/delete named
+movement-pattern exclusion presets -- see above). Print
 uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a

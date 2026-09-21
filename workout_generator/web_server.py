@@ -17,6 +17,7 @@ from . import users
 from .balance import pattern_rows, push_pull_totals
 from .exclusion_presets import delete_preset, list_presets, save_preset
 from .export import history_to_csv
+from .family import household_rows
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
@@ -451,6 +452,13 @@ def create_app(
         return render_template(
             "balance.html", active_page="balance", rows=rows, max_count=max_count,
             push_total=push_total, pull_total=pull_total,
+        )
+
+    @app.route("/family")
+    def family_page():
+        rows = household_rows(app.config["USERS_PATH"], app.config["DATA_ROOT"])
+        return render_template(
+            "family.html", active_page="family", rows=rows, current_username=session["username"],
         )
 
     @app.route("/presets")

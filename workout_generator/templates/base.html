@@ -248,6 +248,7 @@
   <a href="{{ url_for('history_page') }}" class="{{ 'active' if active_page in ('history', 'weeks') else '' }}">History</a>
   <a href="{{ url_for('glossary') }}" class="{{ 'active' if active_page == 'glossary' else '' }}">Glossary</a>
   <a href="{{ url_for('balance') }}" class="{{ 'active' if active_page == 'balance' else '' }}">Balance</a>
+  <a href="{{ url_for('family_page') }}" class="{{ 'active' if active_page == 'family' else '' }}">Family</a>
   <a href="{{ url_for('presets_page') }}" class="{{ 'active' if active_page == 'presets' else '' }}">Presets</a>
   <span class="spacer"></span>
   <span class="current-user">{{ current_display_name }}</span>

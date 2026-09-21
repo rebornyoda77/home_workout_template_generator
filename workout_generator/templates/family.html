@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Family — Workout Generator{% endblock %}
+{% block content %}
+<h1>Household Summary</h1>
+<p class="meta">How everyone sharing this install is doing, side by side -- no need to log in as them to check.</p>
+
+{% if rows %}
+<table>
+<tr><th>Name</th><th>This week</th><th>Current streak</th><th>Longest streak</th><th>Total workouts</th></tr>
+{% for row in rows %}
+<tr>
+  <td>{{ row.display_name }}{% if row.username == current_username %} <span class="tag">You</span>{% endif %}</td>
+  <td>{{ row.completed_this_week }} day{{ '' if row.completed_this_week == 1 else 's' }}</td>
+  <td>{{ row.current_streak }}</td>
+  <td>{{ row.longest_streak }}</td>
+  <td>{{ row.total_active_days }}</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="empty">No accounts yet.</p>
+{% endif %}
+{% endblock %}

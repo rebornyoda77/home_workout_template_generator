@@ -7,7 +7,7 @@ History is persisted as plain JSON so it survives between runs.
 
 import json
 import math
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from . import exercises as ex_pool
@@ -267,6 +267,18 @@ class History:
             if day.get("completed_at")
         }
         return sorted(dates)
+
+    def completed_days_this_week(self, today: date = None) -> int:
+        """Count of distinct days completed within the current calendar
+        week (Monday-Sunday) containing `today` -- powers the household
+        summary's "this week" column (see family.py)."""
+        today = today or date.today()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        return sum(
+            1 for d in self.completed_dates()
+            if monday <= date.fromisoformat(d) <= sunday
+        )
 
     def streaks(self, today: date = None) -> dict:
         """Day-streak stats derived from completed_at dates:

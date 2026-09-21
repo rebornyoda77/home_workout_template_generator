@@ -12,6 +12,7 @@ from pathlib import Path
 from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
 from workout_generator import cli as cli_module
 from workout_generator import exclusion_presets as presets_module
+from workout_generator import family as family_module
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
@@ -271,6 +272,34 @@ class HistoryTests(unittest.TestCase):
         history.week_by_index(1)["days"][1]["completed_at"] = "2026-09-08"
 
         self.assertEqual(history.completed_dates(), ["2026-09-08", "2026-09-10"])
+
+    def test_completed_days_this_week_is_zero_before_anything_is_logged(self):
+        history = History()
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 0)
+
+    def test_completed_days_this_week_counts_only_this_calendar_week(self):
+        # 2026-09-20 is a Sunday -- its week runs Mon 09-14 through Sun 09-20.
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        for day_index, completed_at in enumerate(["2026-09-14", "2026-09-18"]):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 2)
+
+    def test_completed_days_this_week_excludes_dates_outside_the_window(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        # one day before this week's Monday, one day after this week's Sunday
+        for day_index, completed_at in enumerate(["2026-09-13", "2026-09-21"]):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 0)
 
     def test_streaks_on_empty_history(self):
         history = History()
@@ -767,6 +796,83 @@ class ExclusionPresetsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "presets.json"
             self.assertFalse(presets_module.delete_preset("Never saved", path))
+
+
+class FamilyTests(unittest.TestCase):
+    def test_household_rows_is_empty_before_any_accounts_exist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+            self.assertEqual(family_module.household_rows(users_path, data_root), [])
+
+    def test_household_rows_one_row_per_account_before_any_logging(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            rows = family_module.household_rows(users_path, data_root)
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual(row["completed_this_week"], 0)
+                self.assertEqual(row["current_streak"], 0)
+                self.assertEqual(row["longest_streak"], 0)
+                self.assertEqual(row["total_active_days"], 0)
+
+    def test_household_rows_reflects_each_accounts_own_completions(self):
+        # 2026-09-20 is a Sunday -- its week runs Mon 09-14 through Sun 09-20.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            dad_history_path = user_paths.user_history_path("dad", data_root)
+            mom_history_path = user_paths.user_history_path("mom", data_root)
+
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=dad_history_path, output_dir=tmp_path / "dad_output", seed=1,
+            )
+            generate_module.log_day(week["week_index"], 0, history_path=dad_history_path, completed=True)
+            history = History.load(dad_history_path)
+            history.weeks[0]["days"][0]["completed_at"] = "2026-09-18"
+            history.save(dad_history_path)
+
+            generate_module.generate_week(
+                4, history_path=mom_history_path, output_dir=tmp_path / "mom_output", seed=2,
+            )  # mom has a week scheduled but hasn't logged anything
+
+            rows = family_module.household_rows(users_path, data_root, today=date(2026, 9, 20))
+            by_name = {r["display_name"]: r for r in rows}
+            self.assertEqual(by_name["Dad"]["completed_this_week"], 1)
+            self.assertEqual(by_name["Dad"]["total_active_days"], 1)
+            self.assertEqual(by_name["Mom"]["completed_this_week"], 0)
+            self.assertEqual(by_name["Mom"]["total_active_days"], 0)
+
+    def test_household_rows_is_sorted_by_this_weeks_completions_then_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("zzz", "pw", "Zzz", path=users_path)
+            users.add_user("aaa", "pw", "Aaa", path=users_path)
+            users.add_user("busy", "pw", "Busy", path=users_path)
+
+            busy_history_path = user_paths.user_history_path("busy", data_root)
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=busy_history_path, output_dir=tmp_path / "busy_output", seed=3,
+            )
+            generate_module.log_day(week["week_index"], 0, history_path=busy_history_path, completed=True)
+            history = History.load(busy_history_path)
+            history.weeks[0]["days"][0]["completed_at"] = "2026-09-18"
+            history.save(busy_history_path)
+
+            rows = family_module.household_rows(users_path, data_root, today=date(2026, 9, 20))
+            names = [r["display_name"] for r in rows]
+            # Busy (1 completion this week) sorts first; Aaa/Zzz (0 each) sort alphabetically after
+            self.assertEqual(names, ["Busy", "Aaa", "Zzz"])
 
 
 class MigrateTests(unittest.TestCase):
@@ -2254,6 +2360,34 @@ class CliTests(unittest.TestCase):
             self.assertIn("Pull:", output)
             self.assertIn("Boxing Bag", output)
             self.assertIn("(every day)", output)
+
+    def test_family_subcommand_reports_no_accounts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["family", "--users-file", str(users_path), "--data-dir", str(data_root)])
+            self.assertEqual(rc, 0)
+            self.assertIn("No accounts yet", stdout.getvalue())
+
+    def test_family_subcommand_lists_every_account(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["family", "--users-file", str(users_path), "--data-dir", str(data_root)])
+            self.assertEqual(rc, 0)
+            output = stdout.getvalue()
+            self.assertIn("Dad", output)
+            self.assertIn("Mom", output)
+            self.assertIn("This week", output)
 
     def test_backups_subcommand_reports_none_then_lists_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

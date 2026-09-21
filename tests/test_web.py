@@ -479,6 +479,36 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/balance")
         self.assertIn(b"No weeks generated yet", response.data)
 
+    def test_family_requires_login(self):
+        response = self.client.get("/family")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_family_lists_every_account_and_tags_the_current_one(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._login()
+
+        response = self.client.get("/family")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Test User", response.data)
+        self.assertIn(b"Other User", response.data)
+        # only the logged-in account gets the "You" tag
+        self.assertIn(b'Test User <span class="tag">You</span>', response.data)
+        self.assertNotIn(b'Other User <span class="tag">You</span>', response.data)
+
+    def test_family_shows_this_weeks_completions_for_every_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "completed": "on"}, follow_redirects=True,
+        )
+
+        response = self.client.get("/family")
+        self.assertIn(b"1 day", response.data)  # testuser's own completed day this week
+        self.assertIn(b"0 day", response.data)  # otheruser has none
+
     def test_dashboard_and_week_forms_offer_pattern_exclusion_checkboxes(self):
         dashboard = self._login()
         self.assertIn(b'name="exclude_patterns"', dashboard.data)
