@@ -14,6 +14,8 @@ from workout_generator import cli as cli_module
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
+from workout_generator import day_builder as day_builder_module
+from workout_generator import formatter as formatter_module
 from workout_generator.day_builder import DAY_TEMPLATES, exercise_names
 from workout_generator.history import History
 from workout_generator import week_builder as week_builder_module
@@ -86,6 +88,18 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(reloaded.last_used, history.last_used)
         self.assertEqual(reloaded.use_count, history.use_count)
         self.assertEqual(reloaded.weeks, history.weeks)
+
+    def test_record_week_defaults_deload_to_false(self):
+        history = History()
+        history.begin_week()
+        history.record_week("2026-09-20", [])
+        self.assertFalse(history.week_by_index(1)["deload"])
+
+    def test_record_week_stores_deload_flag(self):
+        history = History()
+        history.begin_week()
+        history.record_week("2026-09-20", [], deload=True)
+        self.assertTrue(history.week_by_index(1)["deload"])
 
     def test_delete_week_removes_entry_and_recomputes_aggregates(self):
         history = History()
@@ -714,6 +728,49 @@ class BlockSelectionTests(unittest.TestCase):
         self.assertNotIn(blocks.WARMUP_PATTERN, ex_pool.ALL_PATTERNS)
         self.assertNotIn(blocks.COOLDOWN_PATTERN, ex_pool.ALL_PATTERNS)
 
+    def test_deload_superset_uses_the_fixed_lighter_structure(self):
+        history = History()
+        history.begin_week()
+        block = blocks.build_superset(
+            (ex_pool.SQUAT, ex_pool.PUSH_H), history, used_this_week=set(), rng=random.Random(1), deload=True,
+        )
+        self.assertEqual(block["structure"], blocks.DELOAD_SUPERSET_STRUCTURE[0])
+        self.assertEqual(block["timer"]["rounds"], 3)
+        self.assertEqual(block["timer"]["rest_seconds"], 30)
+
+    def test_deload_buyout_is_shorter(self):
+        history = History()
+        history.begin_week()
+        block = blocks.build_buyout(
+            ex_pool.CARDIO, history, used_this_week=set(), rng=random.Random(2), deload=True,
+        )
+        self.assertEqual(block["timer"], {"kind": "continuous", "seconds": 60, "exercise_count": 1})
+
+    def test_deload_drop_set_reduces_reps_and_increases_rest(self):
+        history = History()
+        history.begin_week()
+        block = blocks.build_drop_set(
+            ex_pool.ARMS, history, used_this_week=set(), rng=random.Random(3), deload=True,
+        )
+        self.assertEqual(block["timer"]["rep_labels"], ["8", "6", "4"])
+        self.assertEqual(block["timer"]["rest_seconds"], 45)
+
+    def test_deload_core_finisher_uses_the_fixed_lighter_structure(self):
+        history = History()
+        history.begin_week()
+        block = blocks.build_core_finisher(
+            (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI), history, used_this_week=set(), rng=random.Random(4), deload=True,
+        )
+        self.assertEqual(block["structure"], blocks.DELOAD_CORE_FINISHER_STRUCTURE[0])
+
+    def test_deload_bag_round_uses_the_fixed_lighter_structure(self):
+        history = History()
+        history.begin_week()
+        block = blocks.build_bag_round(
+            ex_pool.BAG, history, used_this_week=set(), rng=random.Random(5), deload=True,
+        )
+        self.assertEqual(block["structure"], blocks.DELOAD_BAG_ROUND_STRUCTURE[0])
+
 
 class TimerSpecTests(unittest.TestCase):
     """Every block builder must attach a machine-readable `timer` spec
@@ -984,6 +1041,112 @@ class WeekBuilderTests(unittest.TestCase):
 
         used = {e.name for day in week["days"] for block in day["blocks"] for e in block["exercises"]}
         self.assertFalse(used & excluded)
+
+
+class DeloadWeekTests(unittest.TestCase):
+    def test_is_deload_week_default_interval(self):
+        for week_index in (6, 12, 18):
+            self.assertTrue(week_builder_module.is_deload_week(week_index))
+        for week_index in (1, 2, 5, 7, 11, 13):
+            self.assertFalse(week_builder_module.is_deload_week(week_index))
+
+    def test_is_deload_week_custom_interval(self):
+        self.assertTrue(week_builder_module.is_deload_week(3, interval=3))
+        self.assertFalse(week_builder_module.is_deload_week(4, interval=3))
+
+    def test_is_deload_week_disabled_with_nonpositive_interval(self):
+        self.assertFalse(week_builder_module.is_deload_week(6, interval=0))
+        self.assertFalse(week_builder_module.is_deload_week(0, interval=6))
+
+    def test_build_week_auto_detects_deload_at_the_interval(self):
+        history = History()
+        for _ in range(5):
+            build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        week6 = build_week(4, history, rng=random.Random(2), generated_at="2026-10-11")
+        self.assertEqual(week6["week_index"], 6)
+        self.assertTrue(week6["deload"])
+        self.assertTrue(history.week_by_index(6)["deload"])
+
+    def test_build_week_normal_weeks_are_not_deload(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        self.assertFalse(week["deload"])
+        self.assertFalse(history.week_by_index(1)["deload"])
+
+    def test_build_week_explicit_deload_true_overrides_auto_detection(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06", deload=True)
+        self.assertTrue(week["deload"])
+
+    def test_build_week_explicit_deload_false_overrides_auto_detection_at_the_interval(self):
+        history = History()
+        for _ in range(5):
+            build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        week6 = build_week(4, history, rng=random.Random(2), generated_at="2026-10-11", deload=False)
+        self.assertFalse(week6["deload"])
+
+    def test_regenerate_week_auto_detects_deload_from_its_own_week_index(self):
+        history = History()
+        for _ in range(6):
+            build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        regenerated = regenerate_week(6, 4, history, rng=random.Random(9), generated_at="2026-10-18")
+        self.assertTrue(regenerated["deload"])
+        self.assertTrue(history.week_by_index(6)["deload"])
+
+    def test_deload_day_avoids_power_pattern_when_an_alternative_exists(self):
+        # "Lower-Body Power & Push" offers Power/Plyo or Cardio for its first
+        # buy-out -- deload should steer toward Cardio here, the same
+        # steering --exclude-pattern already gives build_buyout.
+        history = History()
+        history.begin_week()
+        template = DAY_TEMPLATES[0]
+        self.assertEqual(template["title"], "Lower-Body Power & Push")
+        power_names = {e.name for e in ex_pool.by_pattern(ex_pool.POWER)}
+        for seed in range(10):
+            day = day_builder_module.build_day(
+                template, history, used_this_week=set(), rng=random.Random(seed), deload=True,
+            )
+            used = {e.name for block in day["blocks"] for e in block["exercises"]}
+            self.assertFalse(used & power_names)
+
+    def test_deload_day_falls_back_to_power_when_no_alternative_pattern_exists(self):
+        # "Upper-Body Pull & Conditioning"'s second buy-out is Power/Plyo
+        # only -- deload can't avoid it there (same "no substitute"
+        # fallback as --exclude-pattern -- see find_exclusion_violations),
+        # but it must not crash, and still uses the lighter deload timing.
+        history = History()
+        history.begin_week()
+        template = next(t for t in DAY_TEMPLATES if t["title"] == "Upper-Body Pull & Conditioning")
+        day = day_builder_module.build_day(
+            template, history, used_this_week=set(), rng=random.Random(1), deload=True,
+        )
+        buyout_2 = next(b for b in day["blocks"] if b["title"] == "Buy-Out 2")
+        self.assertIn("deload week", buyout_2["structure"])
+
+    def test_deload_week_blocks_use_the_lighter_deload_structures(self):
+        history = History()
+        for _ in range(5):
+            build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        week6 = build_week(4, history, rng=random.Random(2), generated_at="2026-10-11")
+        for day in week6["days"]:
+            for block in day["blocks"]:
+                if block["type"] in ("superset", "buyout", "drop_set", "core_finisher", "bag_round"):
+                    self.assertIn("deload week", block["structure"])
+
+    def test_normal_week_blocks_never_mention_deload(self):
+        history = History()
+        week = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        for day in week["days"]:
+            for block in day["blocks"]:
+                self.assertNotIn("deload", block["structure"])
+
+    def test_markdown_shows_a_deload_banner_only_on_deload_weeks(self):
+        history = History()
+        normal_week = build_week(4, history, rng=random.Random(1), generated_at="2026-09-06", deload=False)
+        deload_week = build_week(4, history, rng=random.Random(2), generated_at="2026-09-13", deload=True)
+
+        self.assertNotIn("Deload / Recovery Week", formatter_module.week_to_markdown(normal_week))
+        self.assertIn("Deload / Recovery Week", formatter_module.week_to_markdown(deload_week))
 
 
 class GenerateModuleTests(unittest.TestCase):
@@ -1353,6 +1516,55 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 cli_main(["generate", "--exclude-pattern", "not_a_real_pattern"])
+
+    def test_deload_flag_forces_a_deload_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main([
+                    "generate", "--days", "3", "--seed", "1", "--deload",
+                    "--history-file", str(history_path), "--output-dir", str(output_dir),
+                ])
+            self.assertEqual(rc, 0)
+            self.assertIn("Deload / Recovery Week", stdout.getvalue())
+            self.assertTrue(History.load(history_path).week_by_index(1)["deload"])
+
+    def test_no_deload_flag_overrides_auto_detection_at_the_interval(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            for week in range(1, 6):
+                cli_main(["generate", "--days", "3", "--seed", str(week), *common])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["generate", "--days", "3", "--seed", "6", "--no-deload", *common])
+            self.assertEqual(rc, 0)
+            self.assertNotIn("Deload / Recovery Week", stdout.getvalue())
+            self.assertFalse(History.load(history_path).week_by_index(6)["deload"])
+
+    def test_deload_and_no_deload_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                cli_main(["generate", "--deload", "--no-deload"])
+
+    def test_list_shows_deload_weeks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            cli_main(["generate", "--days", "3", "--seed", "1", "--deload", *common])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                cli_main(["list", *common])
+            self.assertIn("deload week", stdout.getvalue())
 
     def test_streaks_subcommand_reports_current_and_longest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

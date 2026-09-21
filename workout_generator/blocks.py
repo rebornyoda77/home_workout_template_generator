@@ -123,6 +123,30 @@ COOLDOWN_COUNT = 4
 WARMUP_STRUCTURE = f"{WARMUP_COUNT} moves, 30s each -- get the heart rate up and the joints moving"
 COOLDOWN_STRUCTURE = f"{COOLDOWN_COUNT} stretches, 30s per side/hold -- bring the heart rate back down"
 
+# Deload/recovery week variants: fixed (not random-rolled) lighter structures
+# for every block type -- fewer rounds and/or more rest than any normal-week
+# option, so a deload week is unambiguously the lightest version rather than
+# just whichever random pick happened to land. See week_builder.is_deload_week
+# for how a week gets flagged as a deload week in the first place.
+DELOAD_TAG = " -- deload week, keep it light"
+
+DELOAD_SUPERSET_STRUCTURE = (
+    f"3 rounds: 30s work / 30s rest per exercise{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 3, "work_seconds": 30, "rest_seconds": 30},
+)
+DELOAD_CORE_FINISHER_STRUCTURE = (
+    f"2 rounds: 30s work / 30s rest per exercise{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 2, "work_seconds": 30, "rest_seconds": 30},
+)
+DELOAD_BAG_ROUND_STRUCTURE = (
+    f"2 rounds: 1:00 work / 45s rest -- easy pace, focus on form{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 2, "work_seconds": 60, "rest_seconds": 45},
+)
+DELOAD_BUYOUT_DURATION = f"1:00 continuous buy-out{DELOAD_TAG}"
+DELOAD_BUYOUT_TIMER = {"kind": "continuous", "seconds": 60}
+DELOAD_DROP_SET_REPS = (8, 6, 4)
+DELOAD_DROP_SET_REST_SECONDS = 45
+
 
 def _candidates(pattern, history: History, used_this_week, avoid_weeks, excluded_names=frozenset()):
     pool = ex_pool.by_pattern(pattern)
@@ -172,9 +196,9 @@ def pick_exercise(pattern, history: History, used_this_week, rng: random.Random,
     return choice
 
 
-def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset()):
+def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
-    structure, timer = rng.choice(SUPERSET_STRUCTURES)
+    structure, timer = DELOAD_SUPERSET_STRUCTURE if deload else rng.choice(SUPERSET_STRUCTURES)
     return {
         "type": "superset",
         "title": title,
@@ -184,7 +208,7 @@ def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title=
     }
 
 
-def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out", excluded_names=frozenset()):
+def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out", excluded_names=frozenset(), deload=False):
     pattern_options = patterns if isinstance(patterns, (list, tuple)) else (patterns,)
     # Buy-outs choose freely among several patterns (unlike a superset, which
     # needs one exercise per listed pattern) -- so if one option is entirely
@@ -193,34 +217,40 @@ def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="B
     viable = [p for p in pattern_options if any(e.name not in excluded_names for e in ex_pool.by_pattern(p))]
     pattern = rng.choice(viable) if viable else rng.choice(pattern_options)
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
+    duration, timer = (DELOAD_BUYOUT_DURATION, DELOAD_BUYOUT_TIMER) if deload else (BUYOUT_DURATION, BUYOUT_TIMER)
     return {
         "type": "buyout",
         "title": title,
-        "structure": BUYOUT_DURATION,
-        "timer": {**BUYOUT_TIMER, "exercise_count": len(picked)},
+        "structure": duration,
+        "timer": {**timer, "exercise_count": len(picked)},
         "exercises": picked,
     }
 
 
-def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set", excluded_names=frozenset()):
+def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
-    reps = "/".join(str(r) for r in DROP_SET_REPS)
+    rep_values = DELOAD_DROP_SET_REPS if deload else DROP_SET_REPS
+    rest_seconds = DELOAD_DROP_SET_REST_SECONDS if deload else DROP_SET_REST_SECONDS
+    reps = "/".join(str(r) for r in rep_values)
+    structure = f"3 rounds, descending reps: {reps} (rest {rest_seconds}s between rounds)"
+    if deload:
+        structure += DELOAD_TAG
     return {
         "type": "drop_set",
         "title": title,
-        "structure": f"3 rounds, descending reps: {reps} (rest 30s between rounds)",
+        "structure": structure,
         "timer": {
-            "kind": "rounds_with_rest", "rounds": len(DROP_SET_REPS),
-            "rest_seconds": DROP_SET_REST_SECONDS,
-            "rep_labels": [str(r) for r in DROP_SET_REPS],
+            "kind": "rounds_with_rest", "rounds": len(rep_values),
+            "rest_seconds": rest_seconds,
+            "rep_labels": [str(r) for r in rep_values],
         },
         "exercises": picked,
     }
 
 
-def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset()):
+def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
-    structure, timer = rng.choice(CORE_FINISHER_STRUCTURES)
+    structure, timer = DELOAD_CORE_FINISHER_STRUCTURE if deload else rng.choice(CORE_FINISHER_STRUCTURES)
     return {
         "type": "core_finisher",
         "title": title,
@@ -230,9 +260,9 @@ def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, t
     }
 
 
-def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset()):
+def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
-    structure, timer = rng.choice(BAG_ROUND_STRUCTURES)
+    structure, timer = DELOAD_BAG_ROUND_STRUCTURE if deload else rng.choice(BAG_ROUND_STRUCTURES)
     return {
         "type": "bag_round",
         "title": title,

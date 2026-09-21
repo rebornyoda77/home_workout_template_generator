@@ -11,6 +11,18 @@ from .day_builder import DAY_TEMPLATES, build_day, exercise_names
 from .history import History
 
 
+DELOAD_INTERVAL_WEEKS = 6
+
+
+def is_deload_week(week_index: int, interval: int = DELOAD_INTERVAL_WEEKS) -> bool:
+    """Every `interval`th week is automatically treated as a lighter
+    deload/recovery week (see blocks.py's DELOAD_* structures and
+    day_builder.build_day for what that actually changes), unless the
+    caller passes an explicit `deload=True/False` override to build_week/
+    regenerate_week. `interval <= 0` disables auto-detection entirely."""
+    return interval > 0 and week_index > 0 and week_index % interval == 0
+
+
 def _template_bias(avg_rating) -> float:
     """Turns a template's average week rating (1-5) into a +/-3 nudge on
     top of its rotation position -- neutral (0) when the template has no
@@ -77,7 +89,7 @@ def _validate_num_days(num_days: int) -> None:
 
 def _build_days(
     num_days: int, slot_index: int, history: History, rng: random.Random, avoid_weeks: int,
-    excluded_names=frozenset(),
+    excluded_names=frozenset(), deload: bool = False,
 ):
     """Builds one week's worth of days. `slot_index` only decides which day
     templates to start rotating from (so a given slot always leans toward
@@ -91,7 +103,7 @@ def _build_days(
     used_this_week = set()
     days = []
     for template in templates:
-        day = build_day(template, history, used_this_week, rng, avoid_weeks, excluded_names)
+        day = build_day(template, history, used_this_week, rng, avoid_weeks, excluded_names, deload=deload)
         history.record_day(day["title"], exercise_names(day))
         days.append(day)
     return days
@@ -104,18 +116,24 @@ def build_week(
     avoid_weeks: int = 2,
     generated_at: str = None,
     excluded_names=frozenset(),
+    deload: bool = None,
 ):
+    """`deload=None` (the default) auto-detects via is_deload_week; pass
+    True/False to force this week to be (or not be) a lighter recovery
+    week regardless of where it falls in the interval."""
     _validate_num_days(num_days)
     rng = rng or random.Random()
     generated_at = generated_at or date.today().isoformat()
 
     week_index = history.begin_week()
-    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names)
-    history.record_week(generated_at, [serialize_day(d) for d in days])
+    deload_flag = is_deload_week(week_index) if deload is None else bool(deload)
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names, deload=deload_flag)
+    history.record_week(generated_at, [serialize_day(d) for d in days], deload=deload_flag)
 
     return {
         "week_index": week_index,
         "generated_at": generated_at,
+        "deload": deload_flag,
         "days": days,
     }
 
@@ -128,12 +146,14 @@ def regenerate_week(
     avoid_weeks: int = 2,
     generated_at: str = None,
     excluded_names=frozenset(),
+    deload: bool = None,
 ):
     """Rerolls a specific week's content in place, keeping its week_index
     (so its slot in history/the web UI doesn't move). Any existing entry
     at that index is discarded first -- its exercises no longer count
     toward freshness scoring, so the reroll is free to reuse them if
-    they're otherwise the freshest choice."""
+    they're otherwise the freshest choice. `deload` behaves as in
+    build_week -- None auto-detects from this same week_index."""
     _validate_num_days(num_days)
     rng = rng or random.Random()
     generated_at = generated_at or date.today().isoformat()
@@ -145,11 +165,13 @@ def regenerate_week(
     # the highest index and got wiped out by delete_week above.
     history.week_index = max(history.week_index, week_index)
 
-    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names)
-    history.record_week(generated_at, [serialize_day(d) for d in days], week_index=week_index)
+    deload_flag = is_deload_week(week_index) if deload is None else bool(deload)
+    days = _build_days(num_days, week_index, history, rng, avoid_weeks, excluded_names, deload=deload_flag)
+    history.record_week(generated_at, [serialize_day(d) for d in days], week_index=week_index, deload=deload_flag)
 
     return {
         "week_index": week_index,
         "generated_at": generated_at,
+        "deload": deload_flag,
         "days": days,
     }

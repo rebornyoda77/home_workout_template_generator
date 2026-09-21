@@ -12,6 +12,13 @@ from .blocks import (
 
 CORE_PAIR = (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI)
 
+# On a deload week, steer buy-outs away from Power/Plyo (the only pattern
+# high-impact enough to matter here -- see the templates below, it never
+# appears in Block A/B, the drop set, or the core finisher) toward the
+# calmer Cardio/Carry alternatives, reusing the same excluded_names steering
+# that --exclude-pattern already gives block builders (see blocks.py).
+DELOAD_EXCLUDED_NAMES = frozenset(e.name for e in ex_pool.by_pattern(ex_pool.POWER))
+
 DAY_TEMPLATES = [
     {
         "title": "Lower-Body Power & Push",
@@ -52,36 +59,39 @@ DAY_TEMPLATES = [
 ]
 
 
-def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset()):
+def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset(), deload=False):
+    if deload:
+        excluded_names = frozenset(excluded_names) | DELOAD_EXCLUDED_NAMES
+    drop_set_title = "Drop Set (8/6/4)" if deload else "Drop Set (10/8/6)"
     blocks = [
         build_warmup(rng),
         build_superset(
             template["block_a_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block A - Strength Superset", excluded_names=excluded_names,
+            title="Block A - Strength Superset", excluded_names=excluded_names, deload=deload,
         ),
         build_buyout(
             template["buyout_1_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 1", excluded_names=excluded_names,
+            title="Buy-Out 1", excluded_names=excluded_names, deload=deload,
         ),
         build_superset(
             template["block_b_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block B - Strength Superset", excluded_names=excluded_names,
+            title="Block B - Strength Superset", excluded_names=excluded_names, deload=deload,
         ),
         build_buyout(
             template["buyout_2_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 2", excluded_names=excluded_names,
+            title="Buy-Out 2", excluded_names=excluded_names, deload=deload,
         ),
         build_drop_set(
             template["drop_set_pattern"], history, used_this_week, rng, avoid_weeks,
-            title="Drop Set (10/8/6)", excluded_names=excluded_names,
+            title=drop_set_title, excluded_names=excluded_names, deload=deload,
         ),
         build_core_finisher(
             template["core_finisher_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Core Finisher", excluded_names=excluded_names,
+            title="Core Finisher", excluded_names=excluded_names, deload=deload,
         ),
         build_bag_round(
             ex_pool.BAG, history, used_this_week, rng, avoid_weeks,
-            title="Bag Finisher", excluded_names=excluded_names,
+            title="Bag Finisher", excluded_names=excluded_names, deload=deload,
         ),
         build_cooldown(rng),
     ]

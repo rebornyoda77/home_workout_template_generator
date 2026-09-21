@@ -82,7 +82,7 @@ class History:
             self.last_used[name] = self.week_index
             self.use_count[name] = self.use_count.get(name, 0) + 1
 
-    def record_week(self, generated_at: str, days, week_index: int = None) -> None:
+    def record_week(self, generated_at: str, days, week_index: int = None, deload: bool = False) -> None:
         """`days` is the full serialized day list (see week_builder.serialize_day):
         each entry has a title and its blocks (with exercises), not just a title,
         so a past week can be redisplayed later without being regenerated.
@@ -93,12 +93,19 @@ class History:
         -- record_day's staleness stamps still use the live counter (see
         `staleness`/`used_within`) so a regenerated week's picks are treated
         as freshly used *now*, not backdated to whichever slot they land in.
+
+        `deload` just records whether week_builder built this as a lighter
+        recovery week (see week_builder.is_deload_week) -- purely
+        informational here, for display; it doesn't change any History
+        behavior. A week loaded from before this field existed simply has
+        no "deload" key, which templates treat as falsy.
         """
         stored_index = self.week_index if week_index is None else week_index
         self.weeks.append(
             {
                 "week_index": stored_index,
                 "generated_at": generated_at,
+                "deload": bool(deload),
                 "days": list(days),
             }
         )

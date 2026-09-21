@@ -63,14 +63,18 @@ def generate_week(
     save: bool = True,
     excluded_exercises=None,
     excluded_patterns=None,
+    deload: bool = None,
 ):
     """Builds a new week, renders it to Markdown, and (unless save=False)
     writes the history file and a Markdown file to disk. Returns (week,
-    markdown, output_path); output_path is None when save=False."""
+    markdown, output_path); output_path is None when save=False. `deload`
+    is None (auto-detect), True, or False -- see week_builder.build_week."""
     rng = random.Random(seed)
     history = History.load(history_path)
     excluded_names = resolve_excluded_names(excluded_exercises, excluded_patterns)
-    week = build_week(num_days, history, rng=rng, avoid_weeks=avoid_weeks, excluded_names=excluded_names)
+    week = build_week(
+        num_days, history, rng=rng, avoid_weeks=avoid_weeks, excluded_names=excluded_names, deload=deload,
+    )
     markdown = week_to_markdown(week)
 
     output_path = None
@@ -153,13 +157,15 @@ def regenerate_week(
     save: bool = True,
     excluded_exercises=None,
     excluded_patterns=None,
+    deload: bool = None,
 ):
     """Rerolls a specific week's content in place, keeping its week_index
     (so it stays in the same spot in history/the web UI) but replacing its
     exercises and getting a fresh generated_at date. `num_days` defaults to
     that week's original day count. Returns (week, markdown, output_path),
     or None if that week hasn't been generated yet. output_path is None
-    when save=False."""
+    when save=False. `deload` is None (auto-detect), True, or False -- see
+    week_builder.regenerate_week."""
     rng = random.Random(seed)
     history = History.load(history_path)
     existing = history.week_by_index(week_index)
@@ -172,6 +178,7 @@ def regenerate_week(
     excluded_names = resolve_excluded_names(excluded_exercises, excluded_patterns)
     week = _regenerate_week_core(
         week_index, num_days, history, rng=rng, avoid_weeks=avoid_weeks, excluded_names=excluded_names,
+        deload=deload,
     )
     markdown = week_to_markdown(week)
 

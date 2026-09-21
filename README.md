@@ -46,6 +46,10 @@ python main.py generate --exclude-exercise "Shoulder Press Half-Kneeling"
 python main.py generate --exclude-pattern push_vertical
 python main.py regenerate --week 3 --exclude-pattern push_vertical --exclude-pattern pull_vertical
 
+# every 6th week is automatically a lighter deload/recovery week -- override it either way:
+python main.py generate --deload           # force this week to be a deload week
+python main.py generate --no-deload        # force it to be a normal week instead
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -81,6 +85,18 @@ A always needs a Squat and a Horizontal Push pick) — if excluding a whole
 pattern can't be fully honored for that reason, you'll get a warning listing
 which exercises had to be included anyway, rather than a silent no-op.
 
+Every 6th week (`week_index % 6 == 0`) is automatically built as a lighter
+**deload/recovery week**: 3 rounds instead of 4-5 for supersets, 2 rounds for
+the core finisher, a 1-minute buy-out instead of 2, a 3-rep drop set
+(8/6/4) instead of 5/8/6 -- all with more rest between rounds -- and
+Power/Plyo exercises are steered away from in buy-outs (unless a day
+template has no substitute pattern there, the same "no substitute exists"
+fallback `--exclude-pattern` already has). `--deload`/`--no-deload` (or the
+web UI's own "Deload / recovery week" override, on both the generate and
+regenerate forms) force this week to be one, or not, regardless of where it
+falls in that schedule; `list` and the web UI both flag a deload week
+wherever it shows up.
+
 Every `generate`/`regenerate`/`delete` also snapshots that history file
 into a `backups/` folder right next to it (`data/backups/`, or
 `data/users/<name>/backups/` with `--user`) — skipped if unchanged from the
@@ -107,6 +123,10 @@ freshness/staleness tracking that governs the movement-pattern pool below
 (a warm-up routine repeating is fine; a strength exercise repeating too
 often isn't). They still get a Start Timer button like any other block, but
 no "what did you actually do" logging -- that doesn't apply to a stretch.
+
+(Every 6th week is a lighter deload/recovery week by default -- see
+"Usage" above -- which swaps the round counts and rest below for lighter
+versions, but leaves the warm-up/cooldown alone; they're already easy.)
 
 In between, every training day follows the same OTF-style block skeleton:
 
@@ -163,7 +183,11 @@ uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a
 collapsible "Exclude movement patterns" checkbox list for benching a
-pattern for the week (see `--exclude-pattern` above).
+pattern for the week (see `--exclude-pattern` above), and a collapsible
+"Deload / recovery week" select (Auto / Yes / No) to override that week's
+auto-detected deload status (see `--deload`/`--no-deload` above) -- a
+deload week shows a small "Deload Week" badge next to its heading on the
+Dashboard, week page, Today's Workout, and in the History table.
 
 Every day on the Dashboard/week page also has a log form right under it:
 a "Mark this day complete" checkbox, a free-text "what did you actually do"

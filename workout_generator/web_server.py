@@ -21,6 +21,7 @@ from .generate import (
 from .history import History
 from .progression import suggestion_for
 from .user_paths import DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir
+from .week_builder import DELOAD_INTERVAL_WEEKS
 
 DEFAULT_PORT = 5050
 
@@ -43,6 +44,11 @@ def _pattern_options():
 
 def _parse_exclude_patterns(form) -> list:
     return [p for p in form.getlist("exclude_patterns") if p in ex_pool.ALL_PATTERNS]
+
+
+def _parse_deload(form):
+    """None (auto-detect), True, or False -- see week_builder.build_week."""
+    return {"yes": True, "no": False}.get(form.get("deload"), None)
 
 
 def _exercise_suggestions(history: History, week: dict) -> dict:
@@ -97,11 +103,12 @@ def create_app(
         return user_output_dir(session["username"], app.config["OUTPUT_ROOT"])
 
     @app.context_processor
-    def _inject_current_user():
+    def _inject_template_globals():
+        context = {"deload_interval": DELOAD_INTERVAL_WEEKS}
         username = session.get("username")
-        if not username:
-            return {}
-        return {"current_display_name": users.display_name_for(username, app.config["USERS_PATH"])}
+        if username:
+            context["current_display_name"] = users.display_name_for(username, app.config["USERS_PATH"])
+        return context
 
     @app.before_request
     def require_login():
@@ -171,6 +178,7 @@ def create_app(
             output_dir=_output_dir(),
             avoid_weeks=avoid_weeks,
             excluded_patterns=excluded_patterns,
+            deload=_parse_deload(request.form),
         )
         flash(f"Generated Week {week['week_index']}.")
         _flash_exclusion_violations(week, excluded_patterns)
@@ -234,6 +242,7 @@ def create_app(
             num_days=days,
             avoid_weeks=avoid_weeks,
             excluded_patterns=excluded_patterns,
+            deload=_parse_deload(request.form),
         )
         if result is None:
             flash(f"Week {week_index} doesn't exist.")

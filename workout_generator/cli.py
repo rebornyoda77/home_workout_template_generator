@@ -10,6 +10,7 @@ from .generate import (
     rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
+from .week_builder import DELOAD_INTERVAL_WEEKS
 
 COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks")
 
@@ -63,6 +64,27 @@ def _exclusion_args(parser):
     )
 
 
+def _deload_args(parser):
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--deload", action="store_true",
+        help="Force this week to be a lighter deload/recovery week, regardless of the "
+             f"automatic every-{DELOAD_INTERVAL_WEEKS}-weeks schedule.",
+    )
+    group.add_argument(
+        "--no-deload", action="store_true",
+        help="Force this week to be a normal week, even if it would auto-trigger a deload week.",
+    )
+
+
+def _resolve_deload(args):
+    if args.deload:
+        return True
+    if args.no_deload:
+        return False
+    return None
+
+
 def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Generate, list, delete, or regenerate weekly home workout templates.",
@@ -87,6 +109,7 @@ def build_arg_parser():
         help="Print the plan without saving history or writing a file.",
     )
     _exclusion_args(generate_parser)
+    _deload_args(generate_parser)
     _common_paths(generate_parser)
 
     list_parser = sub.add_parser("list", help="List every generated week.")
@@ -115,6 +138,7 @@ def build_arg_parser():
         help="Print the plan without saving history or writing a file.",
     )
     _exclusion_args(regenerate_parser)
+    _deload_args(regenerate_parser)
     _common_paths(regenerate_parser)
 
     rate_parser = sub.add_parser("rate", help="Rate (or clear the rating on) a past week.")
@@ -160,6 +184,7 @@ def _cmd_generate(args) -> int:
         save=not args.dry_run,
         excluded_exercises=args.exclude_exercise,
         excluded_patterns=args.exclude_pattern,
+        deload=_resolve_deload(args),
     )
     print(markdown)
     _warn_exclusion_violations(args, week)
@@ -189,9 +214,10 @@ def _cmd_list(args) -> int:
         titles = ", ".join(day["title"] for day in week["days"])
         rating = week.get("rating")
         rating_suffix = f", {'*' * rating} rated" if rating else ""
+        deload_suffix = ", deload week" if week.get("deload") else ""
         print(
             f"Week {week['week_index']} ({week['generated_at']}, {len(week['days'])} days"
-            f"{rating_suffix}): {titles}"
+            f"{rating_suffix}{deload_suffix}): {titles}"
         )
     return 0
 
@@ -217,6 +243,7 @@ def _cmd_regenerate(args) -> int:
         save=not args.dry_run,
         excluded_exercises=args.exclude_exercise,
         excluded_patterns=args.exclude_pattern,
+        deload=_resolve_deload(args),
     )
     if result is None:
         print(f"Week {args.week} doesn't exist -- nothing to regenerate.", file=sys.stderr)

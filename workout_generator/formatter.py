@@ -28,6 +28,14 @@ def week_to_markdown(week):
     lines = [
         f"# Weekly Workout Template — Week {week['week_index']} ({week['generated_at']})",
         "",
+    ]
+    if week.get("deload"):
+        lines.append(
+            "**Deload / Recovery Week** — lighter volume, more rest, and no Power/Plyo work "
+            "this week to help you recover."
+        )
+        lines.append("")
+    lines += [
         "Home-equipment only: kettlebells (5/10/15 lb), dumbbells (5-30 lb), "
         "resistance bands, adjustable bench, treadmill, boxing bag, yoga mats.",
         "",

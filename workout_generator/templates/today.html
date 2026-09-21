@@ -5,7 +5,7 @@
 <p class="meta">
   <a href="{{ url_for('view_week', week_index=week.week_index) }}">&larr; Week {{ week.week_index }} (all days)</a>
 </p>
-<h1>Day {{ day_number }} of {{ total_days }}: {{ day.title }}{% if day.completed %} <span class="tag tag-completed">Completed</span>{% endif %}</h1>
+<h1>Day {{ day_number }} of {{ total_days }}: {{ day.title }}{% if day.completed %} <span class="tag tag-completed">Completed</span>{% endif %}{% if week.deload %} <span class="tag tag-deload">Deload Week</span>{% endif %}</h1>
 
 <div class="today-nav no-print">
   {% if prev_day_index is not none %}

@@ -31,12 +31,16 @@
   <label for="avoid_weeks">Avoid repeats used within the last N weeks</label>
   <input type="number" id="avoid_weeks" name="avoid_weeks" value="2" min="0" max="10">
   {% include "_exclude_patterns_field.html" %}
+  {% include "_deload_field.html" %}
   <button type="submit" class="save-button">Generate Next Week</button>
 </form>
 </div>
 
 {% if latest_week %}
-<h1 style="margin-top: 36px;"><a href="{{ url_for('view_week', week_index=latest_week.week_index) }}">Latest: Week {{ latest_week.week_index }}</a></h1>
+<h1 style="margin-top: 36px;">
+  <a href="{{ url_for('view_week', week_index=latest_week.week_index) }}">Latest: Week {{ latest_week.week_index }}</a>
+  {% if latest_week.deload %}<span class="tag tag-deload">Deload Week</span>{% endif %}
+</h1>
 <p class="meta">Generated {{ latest_week.generated_at }} — <a href="{{ url_for('history_page') }}">view all weeks</a></p>
 
 <div class="week-actions">
@@ -45,6 +49,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="days" value="{{ latest_week.days | length }}">
     {% include "_exclude_patterns_field.html" %}
+    {% include "_deload_field.html" %}
     <button type="submit" class="button">Regenerate This Week</button>
   </form>
   <form method="post" action="{{ url_for('delete_week_route', week_index=latest_week.week_index) }}" class="inline-form"

@@ -158,13 +158,13 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/logout", follow_redirects=True)
         self.assertIn(b"Log In", response.data)
 
-    def _generate_week(self):
+    def _generate_week(self, deload=None):
         dashboard = self._login()
         csrf = self._csrf_from(dashboard)
-        return self.client.post(
-            "/generate", data={"days": "4", "avoid_weeks": "2", "csrf_token": csrf},
-            follow_redirects=True,
-        )
+        data = {"days": "4", "avoid_weeks": "2", "csrf_token": csrf}
+        if deload is not None:
+            data["deload"] = deload
+        return self.client.post("/generate", data=data, follow_redirects=True)
 
     def test_delete_week_requires_valid_csrf_token(self):
         self._generate_week()
@@ -309,6 +309,30 @@ class WebServerTests(unittest.TestCase):
         dashboard = self._login()
         self.assertIn(b'name="exclude_patterns"', dashboard.data)
         self.assertIn(b"Boxing Bag", dashboard.data)  # a pattern label, from PATTERN_LABELS
+
+    def test_dashboard_and_week_forms_offer_a_deload_override_select(self):
+        dashboard = self._login()
+        self.assertIn(b'name="deload"', dashboard.data)
+        self.assertIn(b"Auto (every 6 weeks)", dashboard.data)
+
+    def test_generate_with_deload_yes_forces_a_deload_week(self):
+        response = self._generate_week(deload="yes")
+        self.assertIn(b"Deload Week", response.data)
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertTrue(history.week_by_index(1)["deload"])
+
+    def test_generate_with_deload_no_skips_auto_detection_at_the_interval(self):
+        for _ in range(5):
+            self._generate_week()
+        response = self._generate_week(deload="no")
+        self.assertNotIn(b"Deload Week", response.data)
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertFalse(history.week_by_index(6)["deload"])
+
+    def test_history_page_shows_deload_badge(self):
+        self._generate_week(deload="yes")
+        response = self.client.get("/history")
+        self.assertIn(b"Deload", response.data)
 
     def test_generate_with_excluded_pattern_flashes_violation_warning_when_unavoidable(self):
         # In a 4-day week every day template is always included, and
