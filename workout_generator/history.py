@@ -7,14 +7,18 @@ History is persisted as plain JSON so it survives between runs.
 
 import json
 import math
+from datetime import date
 from pathlib import Path
+
+from . import exercises as ex_pool
 
 
 DEFAULT_HISTORY_PATH = Path(__file__).resolve().parent.parent / "data" / "history.json"
 
-
-def _exercise_name(exercise) -> str:
-    return exercise["name"] if isinstance(exercise, dict) else exercise.name
+# A week is "stale" once it's been at least this many days since one was
+# last generated/regenerated/copied in -- a little past a typical week's
+# training cadence, so a short travel/rest gap doesn't trigger it.
+DEFAULT_STALE_DAYS = 10
 
 
 class History:
@@ -81,7 +85,7 @@ class History:
             self.last_used[name] = self.week_index
             self.use_count[name] = self.use_count.get(name, 0) + 1
 
-    def record_week(self, generated_at: str, days, week_index: int = None) -> None:
+    def record_week(self, generated_at: str, days, week_index: int = None, deload: bool = False) -> None:
         """`days` is the full serialized day list (see week_builder.serialize_day):
         each entry has a title and its blocks (with exercises), not just a title,
         so a past week can be redisplayed later without being regenerated.
@@ -92,12 +96,19 @@ class History:
         -- record_day's staleness stamps still use the live counter (see
         `staleness`/`used_within`) so a regenerated week's picks are treated
         as freshly used *now*, not backdated to whichever slot they land in.
+
+        `deload` just records whether week_builder built this as a lighter
+        recovery week (see week_builder.is_deload_week) -- purely
+        informational here, for display; it doesn't change any History
+        behavior. A week loaded from before this field existed simply has
+        no "deload" key, which templates treat as falsy.
         """
         stored_index = self.week_index if week_index is None else week_index
         self.weeks.append(
             {
                 "week_index": stored_index,
                 "generated_at": generated_at,
+                "deload": bool(deload),
                 "days": list(days),
             }
         )
@@ -149,7 +160,7 @@ class History:
             for day in week["days"]:
                 for block in day["blocks"]:
                     for exercise in block["exercises"]:
-                        name = _exercise_name(exercise)
+                        name = ex_pool.exercise_name(exercise)
                         self.last_used[name] = wi
                         self.use_count[name] = self.use_count.get(name, 0) + 1
 
@@ -176,15 +187,28 @@ class History:
         """Records what actually happened on one day of a generated week:
         whether it was completed, free-text notes, and per-exercise "actual"
         (what was really used, e.g. "20 lb x10") + "feel" (easy/right/hard).
+        `exercise_logs` can also carry a "load_hint" -- unlike actual/feel
+        (a log of what happened that session), this edits the *prescribed*
+        load stored on this week's own copy of the exercise, e.g. so a week
+        copied from someone else's history (see generate.copy_week) can be
+        retargeted to different weights/reps without touching the shared
+        exercise pool or the account it was copied from.
         Any argument left as None is left unchanged. `exercise_logs` maps
-        (block_index, exercise_index) -> {"actual": str, "feel": str}.
-        Returns True if the week/day existed and was updated."""
+        (block_index, exercise_index) -> {"actual": str, "feel": str,
+        "load_hint": str}. Returns True if the week/day existed and was
+        updated."""
         week = self.week_by_index(week_index)
         if week is None or not (0 <= day_index < len(week["days"])):
             return False
 
         day = week["days"][day_index]
         if completed is not None:
+            if completed and not day.get("completed"):
+                # Stamped only on the False->True transition, so re-saving
+                # notes on an already-completed day doesn't shift its date.
+                day["completed_at"] = date.today().isoformat()
+            elif not completed:
+                day["completed_at"] = ""
             day["completed"] = completed
         if notes is not None:
             day["notes"] = notes
@@ -199,7 +223,67 @@ class History:
                 exercise["actual"] = log["actual"]
             if "feel" in log:
                 exercise["feel"] = log["feel"]
+            if "load_hint" in log:
+                exercise["load_hint"] = log["load_hint"]
         return True
+
+    def completed_dates(self) -> list:
+        """Sorted list of distinct calendar dates (ISO strings) on which at
+        least one day was logged as completed. A day only gets a
+        completed_at stamp on the False->True transition (see
+        update_day_log), so this reflects when workouts actually happened,
+        not when they were generated or scheduled."""
+        dates = {
+            day["completed_at"]
+            for week in self.weeks
+            for day in week["days"]
+            if day.get("completed_at")
+        }
+        return sorted(dates)
+
+    def streaks(self, today: date = None) -> dict:
+        """Day-streak stats derived from completed_at dates:
+        - current_streak: consecutive calendar days with a completed
+          workout, ending at the most recent completed date -- treated as
+          still "current" (not yet broken) if that date is today or
+          yesterday, so it doesn't drop to 0 just because today's workout
+          hasn't been logged yet.
+        - longest_streak: the best such run ever recorded.
+        - total_active_days: distinct days with at least one completed
+          workout, lifetime.
+        """
+        today = today or date.today()
+        dates = [date.fromisoformat(d) for d in self.completed_dates()]
+        if not dates:
+            return {"current_streak": 0, "longest_streak": 0, "total_active_days": 0}
+
+        longest = run = 1
+        for prev, curr in zip(dates, dates[1:]):
+            run = run + 1 if (curr - prev).days == 1 else 1
+            longest = max(longest, run)
+
+        current = 0
+        if (today - dates[-1]).days <= 1:
+            current = 1
+            for prev, curr in zip(reversed(dates[:-1]), reversed(dates[1:])):
+                if (curr - prev).days == 1:
+                    current += 1
+                else:
+                    break
+
+        return {"current_streak": current, "longest_streak": longest, "total_active_days": len(dates)}
+
+    def days_since_last_week_generated(self, today: date = None):
+        """Days since the most recently generated/regenerated/copied-in
+        week's own generated_at date, or None if no week exists yet.
+        Distinct from streaks (which tracks day *completions*): this
+        tracks how long it's been since a plan was last built at all --
+        see web_server.py's stale-week reminder and DEFAULT_STALE_DAYS."""
+        if not self.weeks:
+            return None
+        today = today or date.today()
+        latest_generated_at = max(w["generated_at"] for w in self.weeks)
+        return (today - date.fromisoformat(latest_generated_at)).days
 
     def last_log(self, exercise_name: str) -> dict:
         """The most recent *logged* occurrence of this exercise -- one with

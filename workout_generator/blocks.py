@@ -67,6 +67,86 @@ BAG_ROUND_STRUCTURES = [
      {"kind": "intervals", "rounds": 4, "work_seconds": 60, "rest_seconds": 20}),
 ]
 
+# Warm-up/cooldown moves are fixed, equipment-free content -- not part of
+# the trackable exercise pool (no pattern in ALL_PATTERNS, so they never
+# show up in the Glossary or compete for freshness/staleness scoring).
+# Picked fresh with `rng.sample` each time rather than repeated every week,
+# for a little variety, but with no history-based "don't repeat" logic --
+# unlike the main pool, that would be overkill for a fixed warm-up routine.
+WARMUP_PATTERN = "warmup"
+COOLDOWN_PATTERN = "cooldown"
+
+WARMUP_MOVES = [
+    ex_pool.Exercise("Arm Circles", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Circle both arms forward, then backward, gradually widening the "
+                                   "range of motion to loosen up the shoulders."),
+    ex_pool.Exercise("Bodyweight Squats", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Slow, controlled squats to loosen up the hips, knees, and ankles "
+                                   "before loading up."),
+    ex_pool.Exercise("High Knees", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Jog in place, driving the knees up toward hip height to raise the "
+                                   "heart rate and warm up the hip flexors."),
+    ex_pool.Exercise("Walking Lunge with Reach", WARMUP_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Step into a walking lunge and reach both arms overhead at the "
+                                   "bottom, opening up the hips and shoulders."),
+    ex_pool.Exercise("Jumping Jacks", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Jump the feet out while raising the arms overhead, then back "
+                                   "together, to get the whole body moving."),
+    ex_pool.Exercise("Inchworm to Push-Up", WARMUP_PATTERN, load_hint="bodyweight",
+                      description="Hinge over and walk the hands out to a plank, do one push-up, then "
+                                   "walk the feet back up to standing."),
+]
+
+COOLDOWN_MOVES = [
+    ex_pool.Exercise("Standing Quad Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Standing on one leg, pull the other heel toward the glutes to "
+                                   "stretch the front of the thigh, holding each side."),
+    ex_pool.Exercise("Standing Hamstring Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="With one heel propped forward on the floor, hinge at the hips and "
+                                   "reach toward the toes, holding each side."),
+    ex_pool.Exercise("Doorway Chest Stretch", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Place a forearm on a doorframe and gently lean forward to stretch "
+                                   "the chest and front of the shoulder, holding each side."),
+    ex_pool.Exercise("Child's Pose", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Kneel and sit back onto the heels, reaching the arms forward on the "
+                                   "floor to stretch the low back and shoulders."),
+    ex_pool.Exercise("Cross-Body Shoulder Stretch", COOLDOWN_PATTERN, load_hint="bodyweight", unilateral=True,
+                      description="Pull one arm across the chest with the other hand to stretch the "
+                                   "back of the shoulder, holding each side."),
+    ex_pool.Exercise("Seated Forward Fold", COOLDOWN_PATTERN, load_hint="bodyweight",
+                      description="Sit with legs extended and reach toward the toes, keeping the back "
+                                   "long, to stretch the hamstrings and low back."),
+]
+
+WARMUP_COUNT = 4
+COOLDOWN_COUNT = 4
+WARMUP_STRUCTURE = f"{WARMUP_COUNT} moves, 30s each -- get the heart rate up and the joints moving"
+COOLDOWN_STRUCTURE = f"{COOLDOWN_COUNT} stretches, 30s per side/hold -- bring the heart rate back down"
+
+# Deload/recovery week variants: fixed (not random-rolled) lighter structures
+# for every block type -- fewer rounds and/or more rest than any normal-week
+# option, so a deload week is unambiguously the lightest version rather than
+# just whichever random pick happened to land. See week_builder.is_deload_week
+# for how a week gets flagged as a deload week in the first place.
+DELOAD_TAG = " -- deload week, keep it light"
+
+DELOAD_SUPERSET_STRUCTURE = (
+    f"3 rounds: 30s work / 30s rest per exercise{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 3, "work_seconds": 30, "rest_seconds": 30},
+)
+DELOAD_CORE_FINISHER_STRUCTURE = (
+    f"2 rounds: 30s work / 30s rest per exercise{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 2, "work_seconds": 30, "rest_seconds": 30},
+)
+DELOAD_BAG_ROUND_STRUCTURE = (
+    f"2 rounds: 1:00 work / 45s rest -- easy pace, focus on form{DELOAD_TAG}",
+    {"kind": "intervals", "rounds": 2, "work_seconds": 60, "rest_seconds": 45},
+)
+DELOAD_BUYOUT_DURATION = f"1:00 continuous buy-out{DELOAD_TAG}"
+DELOAD_BUYOUT_TIMER = {"kind": "continuous", "seconds": 60}
+DELOAD_DROP_SET_REPS = (8, 6, 4)
+DELOAD_DROP_SET_REST_SECONDS = 45
+
 
 def _candidates(pattern, history: History, used_this_week, avoid_weeks, excluded_names=frozenset()):
     pool = ex_pool.by_pattern(pattern)
@@ -116,9 +196,9 @@ def pick_exercise(pattern, history: History, used_this_week, rng: random.Random,
     return choice
 
 
-def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset()):
+def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title="Block", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
-    structure, timer = rng.choice(SUPERSET_STRUCTURES)
+    structure, timer = DELOAD_SUPERSET_STRUCTURE if deload else rng.choice(SUPERSET_STRUCTURES)
     return {
         "type": "superset",
         "title": title,
@@ -128,7 +208,7 @@ def build_superset(patterns, history, used_this_week, rng, avoid_weeks=2, title=
     }
 
 
-def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out", excluded_names=frozenset()):
+def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="Buy-Out", excluded_names=frozenset(), deload=False):
     pattern_options = patterns if isinstance(patterns, (list, tuple)) else (patterns,)
     # Buy-outs choose freely among several patterns (unlike a superset, which
     # needs one exercise per listed pattern) -- so if one option is entirely
@@ -137,34 +217,40 @@ def build_buyout(patterns, history, used_this_week, rng, avoid_weeks=2, title="B
     viable = [p for p in pattern_options if any(e.name not in excluded_names for e in ex_pool.by_pattern(p))]
     pattern = rng.choice(viable) if viable else rng.choice(pattern_options)
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
+    duration, timer = (DELOAD_BUYOUT_DURATION, DELOAD_BUYOUT_TIMER) if deload else (BUYOUT_DURATION, BUYOUT_TIMER)
     return {
         "type": "buyout",
         "title": title,
-        "structure": BUYOUT_DURATION,
-        "timer": {**BUYOUT_TIMER, "exercise_count": len(picked)},
+        "structure": duration,
+        "timer": {**timer, "exercise_count": len(picked)},
         "exercises": picked,
     }
 
 
-def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set", excluded_names=frozenset()):
+def build_drop_set(pattern, history, used_this_week, rng, avoid_weeks=2, title="Drop Set", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
-    reps = "/".join(str(r) for r in DROP_SET_REPS)
+    rep_values = DELOAD_DROP_SET_REPS if deload else DROP_SET_REPS
+    rest_seconds = DELOAD_DROP_SET_REST_SECONDS if deload else DROP_SET_REST_SECONDS
+    reps = "/".join(str(r) for r in rep_values)
+    structure = f"3 rounds, descending reps: {reps} (rest {rest_seconds}s between rounds)"
+    if deload:
+        structure += DELOAD_TAG
     return {
         "type": "drop_set",
         "title": title,
-        "structure": f"3 rounds, descending reps: {reps} (rest 30s between rounds)",
+        "structure": structure,
         "timer": {
-            "kind": "rounds_with_rest", "rounds": len(DROP_SET_REPS),
-            "rest_seconds": DROP_SET_REST_SECONDS,
-            "rep_labels": [str(r) for r in DROP_SET_REPS],
+            "kind": "rounds_with_rest", "rounds": len(rep_values),
+            "rest_seconds": rest_seconds,
+            "rep_labels": [str(r) for r in rep_values],
         },
         "exercises": picked,
     }
 
 
-def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset()):
+def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, title="Core Finisher", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(p, history, used_this_week, rng, avoid_weeks, excluded_names) for p in patterns]
-    structure, timer = rng.choice(CORE_FINISHER_STRUCTURES)
+    structure, timer = DELOAD_CORE_FINISHER_STRUCTURE if deload else rng.choice(CORE_FINISHER_STRUCTURES)
     return {
         "type": "core_finisher",
         "title": title,
@@ -174,13 +260,35 @@ def build_core_finisher(patterns, history, used_this_week, rng, avoid_weeks=2, t
     }
 
 
-def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset()):
+def build_bag_round(pattern, history, used_this_week, rng, avoid_weeks=2, title="Bag Finisher", excluded_names=frozenset(), deload=False):
     picked = [pick_exercise(pattern, history, used_this_week, rng, avoid_weeks, excluded_names)]
-    structure, timer = rng.choice(BAG_ROUND_STRUCTURES)
+    structure, timer = DELOAD_BAG_ROUND_STRUCTURE if deload else rng.choice(BAG_ROUND_STRUCTURES)
     return {
         "type": "bag_round",
         "title": title,
         "structure": structure,
         "timer": {**timer, "exercise_count": len(picked)},
+        "exercises": picked,
+    }
+
+
+def build_warmup(rng, count=WARMUP_COUNT, title="Warm-Up"):
+    picked = rng.sample(WARMUP_MOVES, k=min(count, len(WARMUP_MOVES)))
+    return {
+        "type": "warmup",
+        "title": title,
+        "structure": WARMUP_STRUCTURE,
+        "timer": {"kind": "intervals", "rounds": 1, "work_seconds": 30, "rest_seconds": 10, "exercise_count": len(picked)},
+        "exercises": picked,
+    }
+
+
+def build_cooldown(rng, count=COOLDOWN_COUNT, title="Cooldown & Stretch"):
+    picked = rng.sample(COOLDOWN_MOVES, k=min(count, len(COOLDOWN_MOVES)))
+    return {
+        "type": "cooldown",
+        "title": title,
+        "structure": COOLDOWN_STRUCTURE,
+        "timer": {"kind": "intervals", "rounds": 1, "work_seconds": 30, "rest_seconds": 5, "exercise_count": len(picked)},
         "exercises": picked,
     }

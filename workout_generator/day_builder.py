@@ -5,9 +5,27 @@ patterns so the actual exercises can rotate week to week.
 """
 
 from . import exercises as ex_pool
-from .blocks import build_bag_round, build_buyout, build_core_finisher, build_drop_set, build_superset
+from .blocks import (
+    build_bag_round, build_buyout, build_cooldown, build_core_finisher, build_drop_set,
+    build_superset, build_warmup,
+)
 
 CORE_PAIR = (ex_pool.CORE_FLEX, ex_pool.CORE_ANTI)
+
+# Every day template uses CORE_PAIR for its core finisher, and every day gets
+# a Bag Finisher unconditionally (build_day below, not part of any template)
+# -- so these three patterns' use_count always tracks how many days you've
+# done, not a rotation/generator choice like the rest. See web_server.py's
+# /balance page, which flags them so a raw usage count doesn't misread them
+# as an imbalance.
+EVERY_DAY_PATTERNS = frozenset({ex_pool.BAG, *CORE_PAIR})
+
+# On a deload week, steer buy-outs away from Power/Plyo (the only pattern
+# high-impact enough to matter here -- see the templates below, it never
+# appears in Block A/B, the drop set, or the core finisher) toward the
+# calmer Cardio/Carry alternatives, reusing the same excluded_names steering
+# that --exclude-pattern already gives block builders (see blocks.py).
+DELOAD_EXCLUDED_NAMES = frozenset(e.name for e in ex_pool.by_pattern(ex_pool.POWER))
 
 DAY_TEMPLATES = [
     {
@@ -49,42 +67,58 @@ DAY_TEMPLATES = [
 ]
 
 
-def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset()):
+def build_day(template, history, used_this_week, rng, avoid_weeks=2, excluded_names=frozenset(), deload=False):
+    if deload:
+        excluded_names = frozenset(excluded_names) | DELOAD_EXCLUDED_NAMES
+    drop_set_title = "Drop Set (8/6/4)" if deload else "Drop Set (10/8/6)"
     blocks = [
+        build_warmup(rng),
         build_superset(
             template["block_a_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block A - Strength Superset", excluded_names=excluded_names,
+            title="Block A - Strength Superset", excluded_names=excluded_names, deload=deload,
         ),
         build_buyout(
             template["buyout_1_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 1", excluded_names=excluded_names,
+            title="Buy-Out 1", excluded_names=excluded_names, deload=deload,
         ),
         build_superset(
             template["block_b_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Block B - Strength Superset", excluded_names=excluded_names,
+            title="Block B - Strength Superset", excluded_names=excluded_names, deload=deload,
         ),
         build_buyout(
             template["buyout_2_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Buy-Out 2", excluded_names=excluded_names,
+            title="Buy-Out 2", excluded_names=excluded_names, deload=deload,
         ),
         build_drop_set(
             template["drop_set_pattern"], history, used_this_week, rng, avoid_weeks,
-            title="Drop Set (10/8/6)", excluded_names=excluded_names,
+            title=drop_set_title, excluded_names=excluded_names, deload=deload,
         ),
         build_core_finisher(
             template["core_finisher_patterns"], history, used_this_week, rng, avoid_weeks,
-            title="Core Finisher", excluded_names=excluded_names,
+            title="Core Finisher", excluded_names=excluded_names, deload=deload,
         ),
         build_bag_round(
             ex_pool.BAG, history, used_this_week, rng, avoid_weeks,
-            title="Bag Finisher", excluded_names=excluded_names,
+            title="Bag Finisher", excluded_names=excluded_names, deload=deload,
         ),
+        build_cooldown(rng),
     ]
     return {"title": template["title"], "blocks": blocks}
 
 
 def exercise_names(day):
+    """Names used for history's freshness/staleness bookkeeping -- excludes
+    warm-up/cooldown blocks, since those are fixed content outside the
+    trackable exercise pool (see blocks.py), not exercises to avoid
+    repeating week to week. Works on a freshly built day (Exercise dataclass
+    instances) or an already-serialized one loaded back from history (plain
+    dicts) -- build_week calls this on the former right after building each
+    day; copying a week into another account (see generate.copy_week) calls
+    it on the latter, to stamp the copy into the target's own freshness
+    tracking exactly as if they'd generated it themselves."""
     names = []
     for block in day["blocks"]:
-        names.extend(e.name for e in block["exercises"])
+        if block["type"] in ("warmup", "cooldown"):
+            continue
+        names.extend(ex_pool.exercise_name(e) for e in block["exercises"])
     return names

@@ -14,10 +14,12 @@
     <div class="block">
       <h3>{{ block.title }}</h3>
       <p class="block-structure">{{ block.structure }}</p>
+      {% if block.timer %}
       <button type="button" class="button start-timer-btn no-print"
               data-timer='{{ block.timer | tojson }}'
               data-exercises='{{ (block.exercises | map(attribute="name") | list) | tojson }}'
               data-title="{{ block.title }}">Start Timer</button>
+      {% endif %}
       <ul class="exercise-list">
         {% for exercise in block.exercises %}
         <li>
@@ -26,8 +28,15 @@
               <span class="exercise-name">{{ exercise.name }}{{ ' (each side)' if exercise.unilateral else '' }}</span>
               {% if exercise.note %}<span class="exercise-note">{{ exercise.note }}</span>{% endif %}
             </span>
+            {% if block.type not in ('warmup', 'cooldown') %}
+            <input type="text" class="exercise-load-input" name="load_b{{ block_index }}_e{{ loop.index0 }}"
+                   value="{{ exercise.load_hint }}" aria-label="Prescribed load for {{ exercise.name }}"
+                   title="Edit the prescribed load -- e.g. to your own comfortable weight">
+            {% else %}
             <span class="exercise-load">{{ exercise.load_hint }}</span>
+            {% endif %}
           </div>
+          {% if block.type not in ('warmup', 'cooldown') %}
           {% set suggestion = suggestions.get(exercise.name, '') if suggestions else '' %}
           {% if suggestion %}<p class="exercise-suggestion">{{ suggestion }}</p>{% endif %}
           <div class="log-row">
@@ -40,6 +49,7 @@
               <option value="hard" {{ 'selected' if exercise.feel == 'hard' }}>Too hard</option>
             </select>
           </div>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>

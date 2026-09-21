@@ -1,24 +1,16 @@
 import re
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
-from workout_generator import web_config, web_server
+from workout_generator import blocks as blocks_module
+from workout_generator import export as export_module
+from workout_generator import user_paths, users, web_server
+from workout_generator.history import DEFAULT_STALE_DAYS, History
 
 
 CSRF_RE = re.compile(rb'name="csrf_token" value="([0-9a-f]+)"')
-
-
-class WebConfigTests(unittest.TestCase):
-    def test_passcode_round_trip(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "web_config.json"
-            self.assertFalse(web_config.has_web_passcode(path))
-
-            web_config.set_web_passcode("correct-horse", path)
-            self.assertTrue(web_config.has_web_passcode(path))
-            self.assertTrue(web_config.verify_web_passcode("correct-horse", path))
-            self.assertFalse(web_config.verify_web_passcode("wrong", path))
 
 
 class WebServerTests(unittest.TestCase):
@@ -27,19 +19,21 @@ class WebServerTests(unittest.TestCase):
         self.addCleanup(self.tmp_dir.cleanup)
         tmp_path = Path(self.tmp_dir.name)
 
-        config_path = tmp_path / "web_config.json"
-        web_config.set_web_passcode("test-pass", config_path)
+        self.users_path = tmp_path / "users.json"
+        self.data_root = tmp_path / "data"
+        self.output_root = tmp_path / "output"
+        users.add_user("testuser", "test-pass", "Test User", path=self.users_path)
 
         self.app = web_server.create_app(
-            history_path=tmp_path / "history.json",
-            output_dir=tmp_path / "output",
-            web_config_path=config_path,
+            data_root=self.data_root, output_root=self.output_root, users_path=self.users_path,
         )
         self.app.testing = True
         self.client = self.app.test_client()
 
-    def _login(self):
-        return self.client.post("/login", data={"passcode": "test-pass"}, follow_redirects=True)
+    def _login(self, username="testuser", password="test-pass"):
+        return self.client.post(
+            "/login", data={"username": username, "password": password}, follow_redirects=True,
+        )
 
     def _csrf_from(self, response):
         match = CSRF_RE.search(response.data)
@@ -51,14 +45,75 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.headers["Location"])
 
-    def test_wrong_passcode_is_rejected(self):
-        response = self.client.post("/login", data={"passcode": "nope"})
-        self.assertIn(b"Incorrect passcode", response.data)
+    def test_wrong_password_is_rejected(self):
+        response = self.client.post("/login", data={"username": "testuser", "password": "nope"})
+        self.assertIn(b"Incorrect username or password", response.data)
+
+    def test_unknown_username_is_rejected(self):
+        response = self.client.post("/login", data={"username": "ghost", "password": "whatever"})
+        self.assertIn(b"Incorrect username or password", response.data)
 
     def test_login_then_dashboard_shows_empty_state(self):
         response = self._login()
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"No weeks generated yet", response.data)
+
+    def test_login_page_lists_accounts_by_display_name(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        response = self.client.get("/login")
+        self.assertIn(b'<option value="testuser">Test User</option>', response.data)
+        self.assertIn(b'<option value="otheruser">Other User</option>', response.data)
+
+    def test_login_page_shows_message_when_no_accounts_exist(self):
+        app = web_server.create_app(
+            data_root=self.data_root, output_root=self.output_root,
+            users_path=Path(self.tmp_dir.name) / "empty_users.json",
+        )
+        app.testing = True
+        response = app.test_client().get("/login")
+        self.assertIn(b"No accounts yet", response.data)
+        self.assertIn(b"--add-user", response.data)
+
+    def test_nav_shows_current_user_display_name(self):
+        dashboard = self._login()
+        self.assertIn(b'<span class="current-user">Test User</span>', dashboard.data)
+
+    def test_removed_user_session_is_invalidated(self):
+        self._login()
+        users.remove_user("testuser", path=self.users_path)
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_two_users_have_completely_separate_histories(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+
+        dashboard = self._login("testuser", "test-pass")
+        csrf = self._csrf_from(dashboard)
+        self.client.post("/generate", data={"days": "3", "csrf_token": csrf}, follow_redirects=True)
+        self.client.get("/logout")
+
+        other_dashboard = self._login("otheruser", "other-pass")
+        self.assertIn(b"No weeks generated yet", other_dashboard.data)
+        other_csrf = self._csrf_from(other_dashboard)
+        self.client.post("/generate", data={"days": "4", "csrf_token": other_csrf}, follow_redirects=True)
+
+        other_week = self.client.get("/week/1")
+        self.assertEqual(other_week.status_code, 200)
+        self.assertIn(b"Day 4", other_week.data)
+
+        self.client.get("/logout")
+        self._login("testuser", "test-pass")
+        testuser_week = self.client.get("/week/1")
+        self.assertEqual(testuser_week.status_code, 200)
+        self.assertNotIn(b"Day 4", testuser_week.data)  # testuser's own week 1 was only 3 days
+
+        testuser_history = user_paths.user_history_path("testuser", self.data_root)
+        other_history = user_paths.user_history_path("otheruser", self.data_root)
+        self.assertTrue(testuser_history.exists())
+        self.assertTrue(other_history.exists())
+        self.assertEqual(len(History.load(testuser_history).weeks[0]["days"]), 3)
+        self.assertEqual(len(History.load(other_history).weeks[0]["days"]), 4)
 
     def test_generate_requires_valid_csrf_token(self):
         self._login()
@@ -103,15 +158,15 @@ class WebServerTests(unittest.TestCase):
     def test_logout_returns_to_login(self):
         self._login()
         response = self.client.get("/logout", follow_redirects=True)
-        self.assertIn(b"Passcode", response.data)
+        self.assertIn(b"Log In", response.data)
 
-    def _generate_week(self):
+    def _generate_week(self, deload=None):
         dashboard = self._login()
         csrf = self._csrf_from(dashboard)
-        return self.client.post(
-            "/generate", data={"days": "4", "avoid_weeks": "2", "csrf_token": csrf},
-            follow_redirects=True,
-        )
+        data = {"days": "4", "avoid_weeks": "2", "csrf_token": csrf}
+        if deload is not None:
+            data["deload"] = deload
+        return self.client.post("/generate", data=data, follow_redirects=True)
 
     def test_delete_week_requires_valid_csrf_token(self):
         self._generate_week()
@@ -169,6 +224,96 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertIn(b"doesn&#39;t exist", response.data)
 
+    def test_week_page_hides_copy_form_when_no_other_accounts_exist(self):
+        week_response = self._generate_week()
+        self.assertNotIn(b"target_username", week_response.data)
+
+    def test_week_page_offers_a_copy_form_when_other_accounts_exist(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        self.assertIn(b'name="target_username"', week_response.data)
+        self.assertIn(b'<option value="wife">Wife</option>', week_response.data)
+        self.assertNotIn(b'<option value="testuser">', week_response.data)  # never offer copying to yourself
+
+    def test_copy_week_requires_valid_csrf_token(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        self._generate_week()
+        response = self.client.post("/week/1/copy", data={"csrf_token": "bogus", "target_username": "wife"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_copy_week_to_another_account(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "wife"}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Copied Week 1 to Wife as their Week 1", response.data)
+
+        wife_history = History.load(user_paths.user_history_path("wife", self.data_root))
+        self.assertEqual(len(wife_history.weeks), 1)
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertEqual(len(testuser_history.weeks), 1)  # copying doesn't touch the source
+
+    def test_copy_week_uses_the_same_exercises_editable_independently(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post("/week/1/copy", data={"csrf_token": csrf, "target_username": "wife"})
+
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        wife_history = History.load(user_paths.user_history_path("wife", self.data_root))
+        my_names = [e["name"] for d in testuser_history.weeks[0]["days"] for b in d["blocks"] for e in b["exercises"]]
+        wife_names = [e["name"] for d in wife_history.weeks[0]["days"] for b in d["blocks"] for e in b["exercises"]]
+        self.assertEqual(my_names, wife_names)
+
+        # wife can now retarget her own copy's load without touching mine
+        self.client.get("/logout")
+        self._login("wife", "wife-pass")
+        wife_week = self.client.get("/week/1")
+        wife_csrf = self._csrf_from(wife_week)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": wife_csrf, "load_b1_e0": "wife's own weight"},
+        )
+
+        wife_history_after = History.load(user_paths.user_history_path("wife", self.data_root))
+        testuser_history_after = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertEqual(
+            wife_history_after.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]["load_hint"],
+            "wife's own weight",
+        )
+        self.assertNotEqual(
+            testuser_history_after.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]["load_hint"],
+            "wife's own weight",
+        )
+
+    def test_copy_week_rejects_copying_to_yourself(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "testuser"}, follow_redirects=True,
+        )
+        self.assertIn(b"different account", response.data)
+
+    def test_copy_week_rejects_an_unknown_target(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        response = self.client.post(
+            "/week/1/copy", data={"csrf_token": csrf, "target_username": "ghost"}, follow_redirects=True,
+        )
+        self.assertIn(b"valid account", response.data)
+
+    def test_copy_unknown_week_flashes_message(self):
+        users.add_user("wife", "wife-pass", "Wife", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        response = self.client.post(
+            "/week/999/copy", data={"csrf_token": csrf, "target_username": "wife"}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
     def test_rate_week_requires_valid_csrf_token(self):
         self._generate_week()
         response = self.client.post("/week/1/rate", data={"rating": "4", "csrf_token": "bogus"})
@@ -213,6 +358,41 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/history")
         self.assertIn("★★★".encode(), response.data)
 
+    def test_history_page_links_to_csv_export(self):
+        self._generate_week()
+        response = self.client.get("/history")
+        self.assertIn(b'href="/history/export.csv"', response.data)
+
+    def test_export_history_csv_requires_login(self):
+        response = self.client.get("/history/export.csv")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_export_history_csv_returns_a_csv_attachment(self):
+        self._generate_week()
+        response = self.client.get("/history/export.csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.headers["Content-Type"])
+        self.assertIn("attachment", response.headers["Content-Disposition"])
+        self.assertIn("testuser-history.csv", response.headers["Content-Disposition"])
+
+        lines = response.data.decode().strip().splitlines()
+        self.assertEqual(lines[0].strip(), ",".join(export_module.CSV_FIELDNAMES))
+        self.assertGreater(len(lines), 1)
+
+    def test_export_history_csv_is_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._generate_week()
+        response = self.client.get("/history/export.csv")
+        rows_for_testuser = len(response.data.decode().strip().splitlines()) - 1
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        other_response = self.client.get("/history/export.csv")
+        other_lines = other_response.data.decode().strip().splitlines()
+        self.assertEqual(len(other_lines), 1)  # header only -- otheruser generated nothing
+        self.assertGreater(rows_for_testuser, 0)
+
     def test_glossary_requires_login(self):
         response = self.client.get("/glossary")
         self.assertEqual(response.status_code, 302)
@@ -252,10 +432,64 @@ class WebServerTests(unittest.TestCase):
         # template) may still show "Never used" for at least one exercise
         self.assertIn(b"Never used", response.data)
 
+    def test_balance_requires_login(self):
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_balance_shows_empty_state_before_any_week_is_generated(self):
+        self._login()
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No weeks generated yet", response.data)
+
+    def test_balance_shows_pattern_counts_after_generating(self):
+        self._generate_week()
+        response = self.client.get("/balance")
+        self.assertEqual(response.status_code, 200)
+        # every-day patterns show 4 (one per day, generated a 4-day week) and get tagged
+        self.assertIn(b'title="Boxing Bag: used 4 times"', response.data)
+        self.assertIn(b"every day", response.data)
+        # Push/Pull summary is present
+        self.assertIn(b"balance-summary", response.data)
+
+    def test_balance_is_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._generate_week()
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        response = self.client.get("/balance")
+        self.assertIn(b"No weeks generated yet", response.data)
+
     def test_dashboard_and_week_forms_offer_pattern_exclusion_checkboxes(self):
         dashboard = self._login()
         self.assertIn(b'name="exclude_patterns"', dashboard.data)
         self.assertIn(b"Boxing Bag", dashboard.data)  # a pattern label, from PATTERN_LABELS
+
+    def test_dashboard_and_week_forms_offer_a_deload_override_select(self):
+        dashboard = self._login()
+        self.assertIn(b'name="deload"', dashboard.data)
+        self.assertIn(b"Auto (every 6 weeks)", dashboard.data)
+
+    def test_generate_with_deload_yes_forces_a_deload_week(self):
+        response = self._generate_week(deload="yes")
+        self.assertIn(b"Deload Week", response.data)
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertTrue(history.week_by_index(1)["deload"])
+
+    def test_generate_with_deload_no_skips_auto_detection_at_the_interval(self):
+        for _ in range(5):
+            self._generate_week()
+        response = self._generate_week(deload="no")
+        self.assertNotIn(b"Deload Week", response.data)
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        self.assertFalse(history.week_by_index(6)["deload"])
+
+    def test_history_page_shows_deload_badge(self):
+        self._generate_week(deload="yes")
+        response = self.client.get("/history")
+        self.assertIn(b"Deload", response.data)
 
     def test_generate_with_excluded_pattern_flashes_violation_warning_when_unavoidable(self):
         # In a 4-day week every day template is always included, and
@@ -291,8 +525,25 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         self.assertIn(b'name="completed"', week_response.data)
         self.assertIn(b'name="notes"', week_response.data)
-        self.assertIn(b'name="actual_b0_e0"', week_response.data)
-        self.assertIn(b'name="feel_b0_e0"', week_response.data)
+        # block 0 is the warm-up, which has no per-exercise log fields --
+        # block 1 (Block A) is the first block that does.
+        self.assertIn(b'name="actual_b1_e0"', week_response.data)
+        self.assertIn(b'name="feel_b1_e0"', week_response.data)
+        self.assertIn(b'name="load_b1_e0"', week_response.data)
+        self.assertNotIn(b'name="actual_b0_e0"', week_response.data)
+        self.assertNotIn(b'name="load_b0_e0"', week_response.data)
+
+    def test_week_page_shows_warmup_and_cooldown_with_a_timer_but_no_log_fields(self):
+        week_response = self._generate_week()
+        data = week_response.data
+        self.assertIn(b"Warm-Up", data)
+        self.assertIn(b"Cooldown &amp; Stretch", data)
+        # Start Timer buttons exist for every block, including warm-up/cooldown...
+        self.assertIn(b'data-title="Warm-Up"', data)
+        self.assertIn(b'data-title="Cooldown &amp; Stretch"', data)
+        # ...but the warm-up/cooldown exercises don't get actual/feel log fields.
+        self.assertNotIn(b'name="actual_b0_e0"', data)
+        self.assertNotIn(b'name="feel_b0_e0"', data)
 
     def test_log_day_requires_valid_csrf_token(self):
         self._generate_week()
@@ -303,14 +554,17 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         csrf = self._csrf_from(week_response)
 
+        # block 0 is the warm-up (no per-exercise log fields -- see
+        # test_week_page_has_logging_form_fields); block 1 (Block A) is
+        # the first block that actually has actual/feel inputs to save.
         response = self.client.post(
             "/week/1/day/0/log",
             data={
                 "csrf_token": csrf,
                 "completed": "on",
                 "notes": "solid session",
-                "actual_b0_e0": "20 lb x10",
-                "feel_b0_e0": "right",
+                "actual_b1_e0": "20 lb x10",
+                "feel_b1_e0": "right",
             },
             follow_redirects=True,
         )
@@ -318,7 +572,23 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"Saved log for Day 1", response.data)
         self.assertIn(b"Completed", response.data)  # the day-card badge
         self.assertIn(b"solid session", response.data)
-        self.assertIn(b"20 lb x10", response.data)
+        self.assertIn(b'value="20 lb x10"', response.data)  # not just the input's placeholder text
+
+    def test_log_day_edits_the_prescribed_load(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "load_b1_e0": "1x DB, 10 lb -- comfortable for me"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'value="1x DB, 10 lb -- comfortable for me"', response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["load_hint"], "1x DB, 10 lb -- comfortable for me")
 
     def test_log_day_unchecked_completed_box_clears_it(self):
         week_response = self._generate_week()
@@ -337,6 +607,48 @@ class WebServerTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertNotIn(b"Completed</span>", response.data)
+
+    def test_dashboard_hides_streak_panel_with_no_completed_days(self):
+        response = self._generate_week()
+        self.assertNotIn(b"day streak", response.data)
+
+    def test_dashboard_shows_streak_panel_after_completing_a_day(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "completed": "on"}, follow_redirects=True,
+        )
+
+        dashboard = self.client.get("/")
+        self.assertIn(b"1", dashboard.data)
+        self.assertIn(b"day streak", dashboard.data)
+        self.assertIn(b"best streak", dashboard.data)
+        self.assertIn(b"total workouts", dashboard.data)
+
+    def test_dashboard_hides_stale_reminder_for_a_recently_generated_week(self):
+        response = self._generate_week()
+        self.assertNotIn(b"Ready for the next one", response.data)
+
+    def test_dashboard_shows_stale_reminder_once_past_the_threshold(self):
+        self._generate_week()
+        history_path = user_paths.user_history_path("testuser", self.data_root)
+        history = History.load(history_path)
+        history.weeks[0]["generated_at"] = (date.today() - timedelta(days=DEFAULT_STALE_DAYS)).isoformat()
+        history.save(history_path)
+
+        response = self.client.get("/")
+        self.assertIn(b"Ready for the next one", response.data)
+        self.assertIn(f"{DEFAULT_STALE_DAYS} days".encode(), response.data)
+
+    def test_dashboard_hides_stale_reminder_just_under_the_threshold(self):
+        self._generate_week()
+        history_path = user_paths.user_history_path("testuser", self.data_root)
+        history = History.load(history_path)
+        history.weeks[0]["generated_at"] = (date.today() - timedelta(days=DEFAULT_STALE_DAYS - 1)).isoformat()
+        history.save(history_path)
+
+        response = self.client.get("/")
+        self.assertNotIn(b"Ready for the next one", response.data)
 
     def test_log_day_returns_404_for_unknown_week_or_day(self):
         self._generate_week()
@@ -357,13 +669,16 @@ class WebServerTests(unittest.TestCase):
         week_response = self._generate_week()
         csrf = self._csrf_from(week_response)
 
-        first_exercise_name = re.search(
+        # block 0 is the warm-up (not part of the trackable pool -- see
+        # blocks.py); the first *loggable* exercise is block 1's (Block A).
+        all_names = re.findall(
             rb'<span class="exercise-name">([^<]+?)(?: \(each side\))?</span>', week_response.data,
-        ).group(1).decode()
+        )
+        first_exercise_name = all_names[blocks_module.WARMUP_COUNT].decode()
 
         self.client.post(
             "/week/1/day/0/log",
-            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "easy"},
+            data={"csrf_token": csrf, "actual_b1_e0": "20 lb x10", "feel_b1_e0": "easy"},
             follow_redirects=True,
         )
 
@@ -387,7 +702,7 @@ class WebServerTests(unittest.TestCase):
 
         self.client.post(
             "/week/1/day/0/log",
-            data={"csrf_token": csrf, "actual_b0_e0": "20 lb x10", "feel_b0_e0": "hard"},
+            data={"csrf_token": csrf, "actual_b1_e0": "20 lb x10", "feel_b1_e0": "hard"},
             follow_redirects=True,
         )
 
@@ -480,6 +795,55 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertIn(b'rel="manifest"', response.data)
         self.assertIn(b"serviceWorker.register", response.data)
+
+    def test_legacy_week_without_timer_field_still_renders(self):
+        # Weeks generated before the interval-timer feature don't have a
+        # "timer" key on their blocks (see week_builder.serialize_day) --
+        # the page must render around that instead of crashing on
+        # `{{ block.timer | tojson }}` with a real 500.
+        history = History()
+        history.begin_week()
+        legacy_day = {
+            "title": "Legacy Day",
+            "completed": False,
+            "notes": "",
+            "blocks": [
+                {
+                    "type": "superset",
+                    "title": "Block A - Strength Superset",
+                    "structure": "4 rounds: 40s work / 20s rest per exercise",
+                    "exercises": [
+                        {
+                            "name": "Goblet Squat", "pattern": "squat",
+                            "equipment": ["kettlebell", "dumbbell"], "unilateral": False,
+                            "load_hint": "1x KB/DB, 15-25 lb", "note": "", "tags": [],
+                            "description": "", "actual": "", "feel": "",
+                        },
+                    ],
+                },
+            ],
+        }
+        history.record_week("2026-01-01", [legacy_day])
+        history.save(user_paths.user_history_path("testuser", self.data_root))
+
+        self._login()
+
+        # the CSS block always defines `.start-timer-btn { ... }` regardless
+        # of whether any button uses it, so check for the rendered button's
+        # own class attribute rather than the bare class-name substring.
+        rendered_button = b'class="button start-timer-btn'
+
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertNotIn(rendered_button, dashboard.data)
+
+        week_response = self.client.get("/week/1")
+        self.assertEqual(week_response.status_code, 200)
+        self.assertNotIn(rendered_button, week_response.data)
+
+        today_response = self.client.get("/week/1/day/0/today")
+        self.assertEqual(today_response.status_code, 200)
+        self.assertNotIn(rendered_button, today_response.data)
 
 
 if __name__ == "__main__":

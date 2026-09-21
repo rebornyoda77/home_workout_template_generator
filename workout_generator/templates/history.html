@@ -3,11 +3,15 @@
 {% block content %}
 <h1>Week History</h1>
 {% if weeks %}
+<p class="meta no-print">
+  <a href="{{ url_for('export_history_csv') }}">Export as CSV</a>
+  -- every logged week, day, and exercise, for a spreadsheet
+</p>
 <table>
 <tr><th>Week</th><th>Generated</th><th>Days</th><th>Rating</th><th></th></tr>
 {% for w in weeks %}
 <tr>
-  <td>{{ w.week_index }}</td>
+  <td>{{ w.week_index }}{% if w.deload %} <span class="tag tag-deload">Deload</span>{% endif %}</td>
   <td>{{ w.generated_at }}</td>
   <td>{{ w.days | map(attribute='title') | join(', ') }}</td>
   <td class="rating-display">{{ '★' * w.rating if w.rating else '—' }}</td>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Week {{ week.week_index }} — Workout Generator{% endblock %}
 {% block content %}
-<h1>Week {{ week.week_index }}</h1>
+<h1>Week {{ week.week_index }}{% if week.deload %} <span class="tag tag-deload">Deload Week</span>{% endif %}</h1>
 <p class="meta">Generated {{ week.generated_at }} — <a href="{{ url_for('history_page') }}">all weeks</a> · <a href="{{ url_for('dashboard') }}">generate a new one</a></p>
 
 <div class="week-actions">
@@ -10,6 +10,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="days" value="{{ week.days | length }}">
     {% include "_exclude_patterns_field.html" %}
+    {% include "_deload_field.html" %}
     <button type="submit" class="button">Regenerate This Week</button>
   </form>
   <form method="post" action="{{ url_for('delete_week_route', week_index=week.week_index) }}" class="inline-form"
@@ -18,6 +19,18 @@
     <button type="submit" class="button danger-button">Delete This Week</button>
   </form>
   <button type="button" class="button" onclick="window.print()">Print This Week</button>
+  {% if other_accounts %}
+  <form method="post" action="{{ url_for('copy_week_route', week_index=week.week_index) }}" class="inline-form copy-week-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="target_username" required>
+      <option value="">Copy to...</option>
+      {% for account in other_accounts %}
+      <option value="{{ account.username }}">{{ account.display_name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="button">Copy This Week</button>
+  </form>
+  {% endif %}
 </div>
 
 <form method="post" action="{{ url_for('rate_week_route', week_index=week.week_index) }}" class="rating-form no-print">

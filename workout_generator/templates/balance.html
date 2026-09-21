@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Movement Balance — Workout Generator{% endblock %}
+{% block content %}
+<h1>Movement Pattern Balance</h1>
+
+{% if max_count > 0 %}
+<p class="meta">How many times each movement pattern has appeared across every week you've generated, lifetime.
+  Patterns tagged <span class="tag balance-everyday-tag">every day</span> show up in every training day no matter
+  which day templates get picked, so their count tracks how many days you've done -- not a rotation choice like
+  the rest.</p>
+
+<div class="balance-summary">
+  <span class="balance-summary-label">Push</span>
+  <span class="balance-summary-value">{{ push_total }}</span>
+  <span class="balance-summary-sep">vs</span>
+  <span class="balance-summary-value">{{ pull_total }}</span>
+  <span class="balance-summary-label">Pull</span>
+</div>
+
+<div class="balance-chart">
+  {% for row in rows %}
+  <div class="balance-row" title="{{ row.label }}: used {{ row.count }} time{{ '' if row.count == 1 else 's' }}">
+    <span class="balance-label">{{ row.label }}{% if row.every_day %} <span class="tag balance-everyday-tag">every day</span>{% endif %}</span>
+    <span class="balance-track"><span class="balance-fill" style="width: {{ row.pct }}%;"></span></span>
+    <span class="balance-count">{{ row.count }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">No weeks generated yet. <a href="{{ url_for('dashboard') }}">Generate your first one</a> to start tracking movement balance.</p>
+{% endif %}
+{% endblock %}

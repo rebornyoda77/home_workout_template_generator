@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 /output/*.md
+/output/*/*.md
 /data/history.json
 /data/web_config.json
 /data/backups/
+/data/users.json
+/data/users/

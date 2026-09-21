@@ -19,27 +19,44 @@ whatever's easiest) if you'd rather not set up git on the server.
 
 **2. Install dependencies into a virtual environment:**
 ```
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 (A virtual environment isn't required, but keeps this off your system
 Python -- worth doing on a Pi you'll also use for other things.)
 
 **3. Get your data onto the server**, if you're moving from an existing
-setup rather than starting fresh -- copy `data/history.json` (and
-`data/web_config.json`, if you want to keep the same passcode) into the
-project folder. Both are plain JSON and safe to copy by hand; nothing else
-under `data/` needs to move (`data/backups/` will rebuild itself over
-time).
+setup rather than starting fresh -- copy `data/users.json` and
+`data/users/` (everyone's accounts and their own histories) into the
+project folder. All plain JSON, safe to copy by hand; nothing else under
+`data/` needs to move (each user's `backups/` folder will rebuild itself
+over time).
 
-**4. Set a web passcode directly on the server.** `data/web_config.json`
-is per-install -- it won't already exist if you're setting up fresh, and
-copying it over in step 3 already handles the "keep my existing passcode"
-case. Either way, this is how you set (or change) it:
+If you're moving from an install from *before* accounts existed at all,
+you'll have a flat `data/history.json` instead -- copy that over too, then
+see "create an account for yourself" and "one-time: claim your old data"
+below, in that order.
+
+**4. Create an account for yourself** (and repeat for anyone else in your
+household -- each person gets their own login and their own separate
+history):
 ```
-python web_main.py --set-passcode
+python web_main.py --add-user
 ```
+It prompts for a username, an optional display name, and a password.
+`data/users.json` (created on first use) holds every account; nothing here
+is set up yet if you're starting fresh.
+
+**One-time: claim your old data**, only if you copied over a flat
+`data/history.json` in step 3 (skip this on a fresh install, or one that
+already had accounts):
+```
+python web_main.py --migrate-legacy-data <your-username>
+```
+This moves that old shared history (and its backups, and any already-
+generated `output/week-*.md` files) into your new account -- run it once,
+pointed at yourself, not at anyone else.
 
 **5. Run it once by hand to confirm it works:**
 ```
@@ -75,17 +92,25 @@ haven't already).
 
 **8. Make the app reachable on your tailnet**, with a real HTTPS
 certificate and zero public exposure, by pointing Tailscale at nginx's
-port rather than the app's:
+port rather than the app's. `tailscale serve` takes the *external* HTTPS
+port with `--https` and the *local* port to forward to as the plain
+argument -- these don't have to match, and each external port can only
+point at one thing, so if you're already running another self-hosted tool
+this way (e.g. a budget tracker on `:8443`), pick a different external
+port here, like `8444`:
 ```
-sudo tailscale serve --bg 8050
+sudo tailscale serve --bg --https=8444 8050
 ```
 (**Not** `tailscale funnel`, which would expose it to the public internet
 -- you don't want that here.) From any device on your tailnet, you can now
-open `https://<your-server-name>.<your-tailnet>.ts.net` and reach it from
-anywhere -- no port forwarding on your router, nothing reachable outside
-your tailnet. This also means [installing it to your phone's home
+open `https://<your-server-name>.<your-tailnet>.ts.net:8444/` and reach it
+from anywhere -- no port forwarding on your router, nothing reachable
+outside your tailnet. Run `sudo tailscale serve status` any time to see
+every port you've mapped this way, across all your self-hosted tools, in
+one place. This also means [installing it to your phone's home
 screen](../README.md) now gets a real HTTPS URL, which is what lets
-Android's automatic install prompt show up (see the README's PWA section).
+Android's automatic install prompt show up (see the README's PWA section)
+-- just use the `:8444` URL, not the bare hostname, when installing.
 
 **9. Make it survive reboots**, by installing it as a systemd service
 instead of running it by hand:
@@ -103,8 +128,9 @@ boot, which their own installers already set up), you don't need to redo
 steps 6-8 after a reboot -- only the app's own systemd service needed that
 explicit `enable`.
 
-**Keep the app's own passcode login even with Tailscale.** Tailscale's
-network-level access control is strong, but anyone who can reach any
-device already on your tailnet (or whose Tailscale account is
-compromised) could otherwise reach the app -- the passcode is a second,
-independent layer worth keeping.
+**Keep the app's own login even with Tailscale.** Tailscale's network-level
+access control is strong, but anyone who can reach any device already on
+your tailnet (or whose Tailscale account is compromised) could otherwise
+reach the app -- separate accounts and passwords are a second, independent
+layer worth keeping, on top of also keeping everyone's workout history
+separate from each other.

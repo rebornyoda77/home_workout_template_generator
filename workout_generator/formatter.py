@@ -1,12 +1,20 @@
 """Renders a generated week as readable Markdown."""
 
 
+def _field(exercise, name):
+    """`exercise` is a live Exercise dataclass instance for a just-built
+    week (generate_week/regenerate_week), or a plain dict for one already
+    serialized and read back from history (generate.copy_week) -- this
+    reads either shape the same way."""
+    return exercise[name] if isinstance(exercise, dict) else getattr(exercise, name)
+
+
 def _format_exercise(exercise):
-    bits = [exercise.name]
-    if exercise.unilateral:
+    bits = [_field(exercise, "name")]
+    if _field(exercise, "unilateral"):
         bits.append("(each side)")
     line = " ".join(bits)
-    return f"  - {line} — {exercise.load_hint}"
+    return f"  - {line} — {_field(exercise, 'load_hint')}"
 
 
 def _format_block(block):
@@ -28,6 +36,14 @@ def week_to_markdown(week):
     lines = [
         f"# Weekly Workout Template — Week {week['week_index']} ({week['generated_at']})",
         "",
+    ]
+    if week.get("deload"):
+        lines.append(
+            "**Deload / Recovery Week** — lighter volume, more rest, and no Power/Plyo work "
+            "this week to help you recover."
+        )
+        lines.append("")
+    lines += [
         "Home-equipment only: kettlebells (5/10/15 lb), dumbbells (5-30 lb), "
         "resistance bands, adjustable bench, treadmill, boxing bag, yoga mats.",
         "",

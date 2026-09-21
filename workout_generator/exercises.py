@@ -70,6 +70,15 @@ class Exercise:
     description: str = ""  # short how-to, for the glossary page
 
 
+def exercise_name(exercise) -> str:
+    """Works whether `exercise` is a live Exercise instance (as produced by
+    day_builder.build_day, before a week is serialized) or its serialized
+    dict form (see week_builder.serialize_day, or a week loaded back from
+    history) -- both shapes turn up wherever exercise names are pulled out
+    for history bookkeeping."""
+    return exercise["name"] if isinstance(exercise, dict) else exercise.name
+
+
 EXERCISES = [
     # ---- Squat ----------------------------------------------------------
     Exercise("Goblet Squat", SQUAT, ("kettlebell", "dumbbell"), load_hint="1x KB/DB, 15-25 lb",
