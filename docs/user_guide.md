@@ -75,17 +75,25 @@ haven't already).
 
 **8. Make the app reachable on your tailnet**, with a real HTTPS
 certificate and zero public exposure, by pointing Tailscale at nginx's
-port rather than the app's:
+port rather than the app's. `tailscale serve` takes the *external* HTTPS
+port with `--https` and the *local* port to forward to as the plain
+argument -- these don't have to match, and each external port can only
+point at one thing, so if you're already running another self-hosted tool
+this way (e.g. a budget tracker on `:8443`), pick a different external
+port here, like `8444`:
 ```
-sudo tailscale serve --bg 8050
+sudo tailscale serve --bg --https=8444 8050
 ```
 (**Not** `tailscale funnel`, which would expose it to the public internet
 -- you don't want that here.) From any device on your tailnet, you can now
-open `https://<your-server-name>.<your-tailnet>.ts.net` and reach it from
-anywhere -- no port forwarding on your router, nothing reachable outside
-your tailnet. This also means [installing it to your phone's home
+open `https://<your-server-name>.<your-tailnet>.ts.net:8444/` and reach it
+from anywhere -- no port forwarding on your router, nothing reachable
+outside your tailnet. Run `sudo tailscale serve status` any time to see
+every port you've mapped this way, across all your self-hosted tools, in
+one place. This also means [installing it to your phone's home
 screen](../README.md) now gets a real HTTPS URL, which is what lets
-Android's automatic install prompt show up (see the README's PWA section).
+Android's automatic install prompt show up (see the README's PWA section)
+-- just use the `:8444` URL, not the bare hostname, when installing.
 
 **9. Make it survive reboots**, by installing it as a systemd service
 instead of running it by hand:
