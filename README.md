@@ -22,6 +22,9 @@ docstring and each exercise's `note` field):
 | TRX moves | Resistance band or bench-supported dumbbell version |
 | Bosu moves | Flat bench or floor/mat version |
 
+- [User Guide](docs/user_guide.md) — running the web interface unattended
+  on a server, behind nginx and Tailscale
+
 ## Usage
 
 ```bash
@@ -173,8 +176,11 @@ at a glance. CLI parity: `python main.py rate --week N --stars 1-5` (or
 The generator pages share the same `data/history.json` as the CLI, so weeks
 generated, deleted, or regenerated either way show up on both — manage it
 from your phone over the week, or from the terminal, and either sees what
-the other did. Set `--host 0.0.0.0` (behind something like Tailscale, not
-open to the internet) to reach it from another device.
+the other did. To reach it from another device, don't just bind
+`--host 0.0.0.0` (that exposes it, unencrypted, to everything on your
+network) — see the [User Guide](docs/user_guide.md) for running it behind
+nginx and Tailscale instead, with a real HTTPS URL and zero public
+exposure.
 
 **Install it as an app** on your phone's home screen instead of using a
 browser tab/bookmark: on iOS, open it in Safari and use Share -> Add to

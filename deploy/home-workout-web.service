@@ -1,0 +1,35 @@
+# Example systemd unit for running the workout generator's web interface
+# headlessly on a server (e.g. a Raspberry Pi), so it survives reboots and
+# restarts itself if it ever crashes.
+#
+# See docs/user_guide.md's "Running the web interface on a server" section
+# for the full setup, including fronting this with nginx and Tailscale
+# rather than exposing it to the network directly.
+#
+# Install:
+#   sudo cp deploy/home-workout-web.service /etc/systemd/system/
+#   sudo nano /etc/systemd/system/home-workout-web.service   # edit User=/WorkingDirectory= below first
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now home-workout-web
+
+[Unit]
+Description=Home Workout Generator web interface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/home_workout_template_generator
+# Uses the venv's python (see the user guide's setup steps: `python3 -m venv
+# .venv && pip install -r requirements.txt`) so this doesn't depend on
+# whatever's on the system Python. Adjust if you installed differently.
+# --host 127.0.0.1: only reachable via nginx (or another local reverse
+# proxy) on this same machine, never directly from the network -- see the
+# user guide before changing this to 0.0.0.0.
+ExecStart=/home/pi/home_workout_template_generator/.venv/bin/python web_main.py --host 127.0.0.1 --port 5050
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
