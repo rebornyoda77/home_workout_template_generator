@@ -248,6 +248,7 @@
   <a href="{{ url_for('history_page') }}" class="{{ 'active' if active_page in ('history', 'weeks') else '' }}">History</a>
   <a href="{{ url_for('glossary') }}" class="{{ 'active' if active_page == 'glossary' else '' }}">Glossary</a>
   <a href="{{ url_for('balance') }}" class="{{ 'active' if active_page == 'balance' else '' }}">Balance</a>
+  <a href="{{ url_for('presets_page') }}" class="{{ 'active' if active_page == 'presets' else '' }}">Presets</a>
   <span class="spacer"></span>
   <span class="current-user">{{ current_display_name }}</span>
   <a href="{{ url_for('logout') }}">Log out</a>
@@ -509,6 +510,20 @@
       btn.addEventListener('click', function () {
         window.openWorkoutTimer(btn.getAttribute('data-timer'), btn.getAttribute('data-exercises'), btn.getAttribute('data-title'));
       });
+    });
+  });
+})();
+</script>
+<script>
+(function () {
+  document.querySelectorAll('.preset-apply-select').forEach(function (select) {
+    select.addEventListener('change', function () {
+      var scope = select.closest('details') || document;
+      var wanted = select.value ? select.value.split(',') : [];
+      scope.querySelectorAll('.checkbox-grid input[type="checkbox"]').forEach(function (box) {
+        box.checked = wanted.indexOf(box.value) !== -1;
+      });
+      select.value = '';
     });
   });
 })();

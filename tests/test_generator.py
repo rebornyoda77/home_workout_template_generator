@@ -11,6 +11,7 @@ from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
 from workout_generator import cli as cli_module
+from workout_generator import exclusion_presets as presets_module
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
@@ -692,6 +693,80 @@ class UserPathsTests(unittest.TestCase):
             user_paths.user_history_path("dad", data_root=root),
             user_paths.user_history_path("mom", data_root=root),
         )
+
+    def test_user_presets_path_is_namespaced_by_username(self):
+        path = user_paths.user_presets_path("Dad", data_root=Path("/tmp/data"))
+        self.assertEqual(path, Path("/tmp/data/users/dad/presets.json"))
+
+
+class ExclusionPresetsTests(unittest.TestCase):
+    def test_list_presets_is_empty_before_any_are_saved(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            self.assertEqual(presets_module.list_presets(path), [])
+
+    def test_save_preset_persists_name_and_patterns(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore shoulder", ["push_vertical", "pull_vertical"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["name"], "Sore shoulder")
+            self.assertEqual(saved[0]["patterns"], ["pull_vertical", "push_vertical"])
+
+    def test_save_preset_drops_unknown_pattern_keys(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Bad input", ["push_vertical", "not_a_real_pattern"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(saved[0]["patterns"], ["push_vertical"])
+
+    def test_save_preset_rejects_a_blank_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            with self.assertRaises(ValueError):
+                presets_module.save_preset("   ", ["push_vertical"], path)
+
+    def test_save_preset_overwrites_an_existing_name_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore Shoulder", ["push_vertical"], path)
+            presets_module.save_preset("sore shoulder", ["pull_vertical"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["patterns"], ["pull_vertical"])
+
+    def test_list_presets_is_sorted_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Zzz", ["push_vertical"], path)
+            presets_module.save_preset("Aaa", ["pull_vertical"], path)
+
+            names = [p["name"] for p in presets_module.list_presets(path)]
+            self.assertEqual(names, ["Aaa", "Zzz"])
+
+    def test_delete_preset_removes_it_and_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore shoulder", ["push_vertical"], path)
+
+            self.assertTrue(presets_module.delete_preset("Sore shoulder", path))
+            self.assertEqual(presets_module.list_presets(path), [])
+
+    def test_delete_preset_is_case_insensitive(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore Shoulder", ["push_vertical"], path)
+
+            self.assertTrue(presets_module.delete_preset("sore shoulder", path))
+
+    def test_delete_preset_returns_false_for_an_unknown_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            self.assertFalse(presets_module.delete_preset("Never saved", path))
 
 
 class MigrateTests(unittest.TestCase):

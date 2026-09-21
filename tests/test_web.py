@@ -484,6 +484,106 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b'name="exclude_patterns"', dashboard.data)
         self.assertIn(b"Boxing Bag", dashboard.data)  # a pattern label, from PATTERN_LABELS
 
+    def test_presets_requires_login(self):
+        response = self.client.get("/presets")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_presets_shows_empty_state_before_any_are_saved(self):
+        self._login()
+        response = self.client.get("/presets")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_save_preset_requires_valid_csrf_token(self):
+        self._login()
+        response = self.client.post(
+            "/presets", data={"csrf_token": "bogus", "preset_name": "Sore shoulder"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_save_preset_then_it_appears_in_the_list(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Sore shoulder", response.data)
+        self.assertIn(b"Vertical Push", response.data)
+
+    def test_save_preset_with_a_blank_name_flashes_and_does_not_save(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "  ", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+        self.assertIn(b"name", response.data.lower())
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_delete_preset_removes_it(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        presets_page = self.client.get("/presets")
+        csrf2 = self._csrf_from(presets_page)
+        response = self.client.post(
+            "/presets/Sore shoulder/delete", data={"csrf_token": csrf2}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_delete_unknown_preset_flashes_message(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        response = self.client.post(
+            "/presets/Never saved/delete", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
+    def test_presets_are_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        response = self.client.get("/presets")
+        self.assertIn(b"No presets saved yet", response.data)
+        self.assertNotIn(b"<td>Sore shoulder</td>", response.data)
+
+    def test_dashboard_and_week_forms_offer_a_saved_preset_dropdown_once_one_exists(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        dashboard2 = self.client.get("/")
+        self.assertIn(b"preset-apply-select", dashboard2.data)
+        self.assertIn(b"Sore shoulder", dashboard2.data)
+
+        week_response = self._generate_week()
+        self.assertIn(b"preset-apply-select", week_response.data)
+
     def test_dashboard_and_week_forms_offer_a_deload_override_select(self):
         dashboard = self._login()
         self.assertIn(b'name="deload"', dashboard.data)

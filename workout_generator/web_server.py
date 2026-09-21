@@ -15,6 +15,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 from . import exercises as ex_pool
 from . import users
 from .balance import pattern_rows, push_pull_totals
+from .exclusion_presets import delete_preset, list_presets, save_preset
 from .export import history_to_csv
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
@@ -22,7 +23,9 @@ from .generate import (
 )
 from .history import DEFAULT_STALE_DAYS, History
 from .progression import suggestion_for
-from .user_paths import DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir
+from .user_paths import (
+    DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir, user_presets_path,
+)
 from .week_builder import DELOAD_INTERVAL_WEEKS
 
 DEFAULT_PORT = 5050
@@ -104,6 +107,9 @@ def create_app(
     def _output_dir() -> Path:
         return user_output_dir(session["username"], app.config["OUTPUT_ROOT"])
 
+    def _presets_path() -> Path:
+        return user_presets_path(session["username"], app.config["DATA_ROOT"])
+
     @app.context_processor
     def _inject_template_globals():
         context = {"deload_interval": DELOAD_INTERVAL_WEEKS}
@@ -154,7 +160,7 @@ def create_app(
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
             suggestions=suggestions, pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            streaks=history.streaks(), stale_days=stale_days,
+            streaks=history.streaks(), stale_days=stale_days, presets=list_presets(_presets_path()),
         )
 
     @app.route("/generate", methods=["POST"])
@@ -202,7 +208,7 @@ def create_app(
             "week.html", active_page="weeks", week=entry,
             suggestions=_exercise_suggestions(history, entry),
             pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            other_accounts=other_accounts,
+            other_accounts=other_accounts, presets=list_presets(_presets_path()),
         )
 
     @app.route("/week/<int:week_index>/delete", methods=["POST"])
@@ -446,5 +452,41 @@ def create_app(
             "balance.html", active_page="balance", rows=rows, max_count=max_count,
             push_total=push_total, pull_total=pull_total,
         )
+
+    @app.route("/presets")
+    def presets_page():
+        preset_rows = list_presets(_presets_path())
+        for preset in preset_rows:
+            preset["pattern_labels"] = ", ".join(ex_pool.PATTERN_LABELS[key] for key in preset["patterns"])
+        return render_template(
+            "presets.html", active_page="presets", presets=preset_rows,
+            pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
+        )
+
+    @app.route("/presets", methods=["POST"])
+    def save_preset_route():
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        name = request.form.get("preset_name", "").strip()
+        patterns = _parse_exclude_patterns(request.form)
+        if not name:
+            flash("Give your preset a name.")
+            return redirect(url_for("presets_page"))
+
+        save_preset(name, patterns, _presets_path())
+        flash(f'Saved preset "{name}".')
+        return redirect(url_for("presets_page"))
+
+    @app.route("/presets/<name>/delete", methods=["POST"])
+    def delete_preset_route(name: str):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        if delete_preset(name, _presets_path()):
+            flash(f'Deleted preset "{name}".')
+        else:
+            flash("That preset doesn't exist.")
+        return redirect(url_for("presets_page"))
 
     return app

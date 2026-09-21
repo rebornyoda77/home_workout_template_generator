@@ -97,6 +97,17 @@ A always needs a Squat and a Horizontal Push pick) — if excluding a whole
 pattern can't be fully honored for that reason, you'll get a warning listing
 which exercises had to be included anyway, rather than a silent no-op.
 
+If the same set of patterns gets benched over and over (a standing shoulder
+issue, a leg day you're skipping this cycle), the **Presets** page lets you
+save it under a name once -- check the patterns, type a name, Save Preset --
+and every "Exclude movement patterns" section afterward (Dashboard,
+regenerate, week page) gets an "Apply a saved preset" dropdown that
+pre-checks the same boxes for you, no retyping. It's purely a shortcut for
+filling in the checkboxes: picking a preset doesn't change what gets
+submitted or how exclusion is enforced, and presets are per-account like
+everything else. Delete a preset from the same page when it's no longer
+needed.
+
 Every 6th week (`week_index % 6 == 0`) is automatically built as a lighter
 **deload/recovery week**: 3 rounds instead of 4-5 for supersets, 2 rounds for
 the core finisher, a 1-minute buy-out instead of 2, a 3-rep drop set
@@ -244,7 +255,8 @@ plus a Push-vs-Pull total -- patterns that show up in every training day
 regardless of which templates get picked, like the core finisher and the
 bag round, are tagged "every day" so their bar isn't misread as a rotation
 choice; CLI parity: `python main.py balance`, the same counts as ASCII
-bars). Print
+bars), and **Presets** (create/delete named movement-pattern exclusion
+presets -- see above). Print
 uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a

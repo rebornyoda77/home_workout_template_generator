@@ -6,6 +6,7 @@ Each user gets a self-contained slice of the existing data/output layout:
     data/users/<username>/backups/       (backup.py derives this from
                                            history_path's own parent, so it
                                            falls out for free)
+    data/users/<username>/presets.json   (see exclusion_presets.py)
     output/<username>/week-NN-*.md
 """
 
@@ -23,3 +24,7 @@ def user_history_path(username: str, data_root: Path = DEFAULT_DATA_ROOT) -> Pat
 
 def user_output_dir(username: str, output_root: Path = DEFAULT_OUTPUT_ROOT) -> Path:
     return Path(output_root) / normalize_username(username)
+
+
+def user_presets_path(username: str, data_root: Path = DEFAULT_DATA_ROOT) -> Path:
+    return Path(data_root) / "users" / normalize_username(username) / "presets.json"
