@@ -57,6 +57,11 @@ python main.py copy --week 3 --user dad --to mom
 python main.py export                   # full history as CSV, one row per exercise, to stdout
 python main.py export --out history.csv # ...or straight to a file
 
+python main.py log --week 3 --day 2 --complete --notes "felt strong"  # mark a day done + note
+python main.py log --week 3 --day 2 --incomplete                      # undo that
+
+python main.py balance                  # movement-pattern usage counts, lifetime (ASCII bars)
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -153,6 +158,18 @@ which shows the same numbers) turns those dates into a current streak
 (consecutive calendar days with a completed workout -- still counts as
 current if you haven't logged today's yet, so it doesn't reset just because
 the day isn't over) and your longest streak ever, per account.
+`python main.py log --week N --day M --complete/--incomplete --notes
+"..."` is the CLI equivalent of the web log form's "Mark this day
+complete" + notes fields (day numbers are 1-based, matching what's printed
+onscreen) -- per-exercise actual/feel/load logging stays web-only, where
+there's a field for each exercise right in front of you.
+
+Once it's been 10+ days since you last generated (or regenerated, or
+copied in) a week, the dashboard shows a small reminder -- "It's been N
+days since you generated a new week. Ready for the next one?" -- and
+`python main.py streaks` prints the same note. It goes away the moment you
+generate again; there's no dismiss button, since generating is what it's
+nudging you to do.
 
 ## Day structure
 
@@ -225,7 +242,8 @@ how many times it's appeared across every week you've generated, lifetime,
 plus a Push-vs-Pull total -- patterns that show up in every training day
 regardless of which templates get picked, like the core finisher and the
 bag round, are tagged "every day" so their bar isn't misread as a rotation
-choice). Print
+choice; CLI parity: `python main.py balance`, the same counts as ASCII
+bars). Print
 uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a
@@ -345,6 +363,7 @@ workout_generator/
   week_builder.py  picks day templates and assembles a full week
   formatter.py     renders a generated week to Markdown
   export.py        flattens history into CSV rows (`export`, one row per exercise)
+  balance.py       aggregates use_count by movement pattern (`balance` / the Balance page)
   generate.py      shared "build a week + persist it" logic (CLI + web)
   cli.py           argparse CLI (see main.py)
   users.py         account storage (data/users.json) -- one login per person

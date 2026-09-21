@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Workout Generator{% endblock %}
 {% block content %}
+{% if stale_days is not none %}
+<div class="stale-reminder no-print">
+  <p>It's been <strong>{{ stale_days }} days</strong> since you generated a new week. Ready for the next one?</p>
+</div>
+{% endif %}
 {% if streaks.total_active_days > 0 %}
 <div class="streak-row no-print">
   <div class="streak-stat">

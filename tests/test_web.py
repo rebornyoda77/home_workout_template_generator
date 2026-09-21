@@ -1,12 +1,13 @@
 import re
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 from workout_generator import blocks as blocks_module
 from workout_generator import export as export_module
 from workout_generator import user_paths, users, web_server
-from workout_generator.history import History
+from workout_generator.history import DEFAULT_STALE_DAYS, History
 
 
 CSRF_RE = re.compile(rb'name="csrf_token" value="([0-9a-f]+)"')
@@ -623,6 +624,31 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b"day streak", dashboard.data)
         self.assertIn(b"best streak", dashboard.data)
         self.assertIn(b"total workouts", dashboard.data)
+
+    def test_dashboard_hides_stale_reminder_for_a_recently_generated_week(self):
+        response = self._generate_week()
+        self.assertNotIn(b"Ready for the next one", response.data)
+
+    def test_dashboard_shows_stale_reminder_once_past_the_threshold(self):
+        self._generate_week()
+        history_path = user_paths.user_history_path("testuser", self.data_root)
+        history = History.load(history_path)
+        history.weeks[0]["generated_at"] = (date.today() - timedelta(days=DEFAULT_STALE_DAYS)).isoformat()
+        history.save(history_path)
+
+        response = self.client.get("/")
+        self.assertIn(b"Ready for the next one", response.data)
+        self.assertIn(f"{DEFAULT_STALE_DAYS} days".encode(), response.data)
+
+    def test_dashboard_hides_stale_reminder_just_under_the_threshold(self):
+        self._generate_week()
+        history_path = user_paths.user_history_path("testuser", self.data_root)
+        history = History.load(history_path)
+        history.weeks[0]["generated_at"] = (date.today() - timedelta(days=DEFAULT_STALE_DAYS - 1)).isoformat()
+        history.save(history_path)
+
+        response = self.client.get("/")
+        self.assertNotIn(b"Ready for the next one", response.data)
 
     def test_log_day_returns_404_for_unknown_week_or_day(self):
         self._generate_week()

@@ -6,15 +6,19 @@ from . import exercises as ex_pool
 from . import user_paths
 from . import users
 from .backup import DEFAULT_KEEP
+from .balance import pattern_rows, push_pull_totals
 from .export import history_to_csv
 from .generate import (
     DEFAULT_OUTPUT_DIR, copy_week, delete_week, find_exclusion_violations, generate_week,
-    rate_week, regenerate_week, resolve_excluded_names,
+    log_day, rate_week, regenerate_week, resolve_excluded_names,
 )
-from .history import DEFAULT_HISTORY_PATH, History
+from .history import DEFAULT_HISTORY_PATH, DEFAULT_STALE_DAYS, History
 from .week_builder import DELOAD_INTERVAL_WEEKS
 
-COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy", "export")
+COMMANDS = (
+    "generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy", "export",
+    "log", "balance",
+)
 
 
 def _common_paths(parser):
@@ -168,6 +172,18 @@ def build_arg_parser():
     )
     _common_paths(export_parser)
 
+    log_parser = sub.add_parser("log", help="Log a day: mark it complete and/or add notes.")
+    log_parser.add_argument("--week", type=int, required=True, help="Week number.")
+    log_parser.add_argument("--day", type=int, required=True, help="Day number within that week (1-based).")
+    log_complete_group = log_parser.add_mutually_exclusive_group()
+    log_complete_group.add_argument("--complete", action="store_true", help="Mark this day complete.")
+    log_complete_group.add_argument("--incomplete", action="store_true", help="Mark this day not complete.")
+    log_parser.add_argument("--notes", default=None, help="Replace this day's notes.")
+    _common_paths(log_parser)
+
+    balance_parser = sub.add_parser("balance", help="Show movement-pattern usage counts (lifetime).")
+    _common_paths(balance_parser)
+
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
         "--history-file", type=Path, default=None,
@@ -291,6 +307,10 @@ def _cmd_streaks(args) -> int:
     print(f"Current streak: {stats['current_streak']} day(s)")
     print(f"Longest streak: {stats['longest_streak']} day(s)")
     print(f"Total workouts logged: {stats['total_active_days']}")
+
+    stale_days = history.days_since_last_week_generated()
+    if stale_days is not None and stale_days >= DEFAULT_STALE_DAYS:
+        print(f"It's been {stale_days} days since you generated a new week -- ready for the next one?")
     return 0
 
 
@@ -329,6 +349,45 @@ def _cmd_export(args) -> int:
     return 0
 
 
+def _cmd_log(args) -> int:
+    if not args.complete and not args.incomplete and args.notes is None:
+        print("Nothing to log -- pass --complete/--incomplete and/or --notes.", file=sys.stderr)
+        return 1
+
+    completed = True if args.complete else (False if args.incomplete else None)
+    updated = log_day(
+        args.week, args.day - 1,
+        history_path=_resolve_history_file(args),
+        completed=completed, notes=args.notes,
+    )
+    if not updated:
+        print(f"Week {args.week}, day {args.day} doesn't exist.", file=sys.stderr)
+        return 1
+    print(f"Logged Week {args.week}, Day {args.day}.")
+    return 0
+
+
+def _cmd_balance(args) -> int:
+    history = History.load(_resolve_history_file(args))
+    rows = pattern_rows(history)
+    if not any(r["count"] for r in rows):
+        print("No weeks generated yet.")
+        return 0
+
+    push_total, pull_total = push_pull_totals(rows)
+    print(f"Push: {push_total}   Pull: {pull_total}")
+    print()
+
+    max_count = max(r["count"] for r in rows)
+    bar_width = 30
+    for r in rows:
+        filled = round((r["count"] / max_count) * bar_width) if max_count else 0
+        bar = "#" * filled + "-" * (bar_width - filled)
+        tag = " (every day)" if r["every_day"] else ""
+        print(f"{r['label']:<38} {bar} {r['count']}{tag}")
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
@@ -351,6 +410,8 @@ _HANDLERS = {
     "streaks": _cmd_streaks,
     "copy": _cmd_copy,
     "export": _cmd_export,
+    "log": _cmd_log,
+    "balance": _cmd_balance,
     "backups": _cmd_backups,
 }
 

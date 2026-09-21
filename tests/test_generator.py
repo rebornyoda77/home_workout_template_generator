@@ -317,6 +317,32 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(stats["current_streak"], 0)
         self.assertEqual(stats["total_active_days"], 4)
 
+    def test_days_since_last_week_generated_is_none_before_any_week(self):
+        history = History()
+        self.assertIsNone(history.days_since_last_week_generated())
+
+    def test_days_since_last_week_generated_counts_from_the_latest_generated_at(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")
+        self.assertEqual(history.days_since_last_week_generated(today=date(2026, 9, 20)), 7)
+
+    def test_days_since_last_week_generated_uses_the_most_recent_date_not_the_highest_index(self):
+        # regenerating an older week bumps its own generated_at to "now",
+        # which is more recent than a never-touched later week_index
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(2), generated_at="2026-09-13")  # week 2
+        regenerate_week(1, 4, history, rng=random.Random(3), generated_at="2026-09-19")
+
+        self.assertEqual(history.days_since_last_week_generated(today=date(2026, 9, 20)), 1)
+
+    def test_days_since_last_week_generated_reflects_a_copied_in_week(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        history.record_week("2026-09-19", [], deload=False)  # simulates copy_week landing "today"
+        self.assertEqual(history.days_since_last_week_generated(today=date(2026, 9, 20)), 1)
+
     def test_last_log_returns_none_when_never_logged(self):
         history = History()
         build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
@@ -1965,6 +1991,126 @@ class CliTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("Current streak: 1", stdout2.getvalue())
             self.assertIn("Total workouts logged: 1", stdout2.getvalue())
+
+    def test_streaks_subcommand_notes_a_stale_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            history = History.load(history_path)
+            history.weeks[0]["generated_at"] = "2020-01-01"
+            history.save(history_path)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["streaks", *common])
+            self.assertEqual(rc, 0)
+            self.assertIn("ready for the next one", stdout.getvalue())
+
+    def test_log_subcommand_marks_complete_and_sets_notes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["log", "--week", "1", "--day", "1", "--complete", "--notes", "felt great", *common])
+            self.assertEqual(rc, 0)
+            self.assertIn("Logged Week 1, Day 1", stdout.getvalue())
+
+            day = History.load(history_path).week_by_index(1)["days"][0]
+            self.assertTrue(day["completed"])
+            self.assertEqual(day["notes"], "felt great")
+
+    def test_log_subcommand_day_is_1_based(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            cli_main(["log", "--week", "1", "--day", "2", "--complete", *common])
+            days = History.load(history_path).week_by_index(1)["days"]
+            self.assertFalse(days[0]["completed"])
+            self.assertTrue(days[1]["completed"])
+            self.assertFalse(days[2]["completed"])
+
+    def test_log_subcommand_incomplete_clears_completion(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+            cli_main(["log", "--week", "1", "--day", "1", "--complete", *common])
+
+            rc = cli_main(["log", "--week", "1", "--day", "1", "--incomplete", *common])
+            self.assertEqual(rc, 0)
+            day = History.load(history_path).week_by_index(1)["days"][0]
+            self.assertFalse(day["completed"])
+
+    def test_log_subcommand_requires_at_least_one_field(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                rc = cli_main(["log", "--week", "1", "--day", "1", *common])
+            self.assertEqual(rc, 1)
+            self.assertIn("Nothing to log", stderr.getvalue())
+
+    def test_log_subcommand_reports_missing_week_or_day(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                rc = cli_main(["log", "--week", "1", "--day", "99", "--complete", *common])
+            self.assertEqual(rc, 1)
+            self.assertIn("doesn't exist", stderr.getvalue())
+
+    def test_log_and_complete_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(io.StringIO()):
+                cli_main(["log", "--week", "1", "--day", "1", "--complete", "--incomplete"])
+
+    def test_balance_subcommand_reports_none_before_any_week(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["balance", *common])
+            self.assertEqual(rc, 0)
+            self.assertIn("No weeks generated yet", stdout.getvalue())
+
+    def test_balance_subcommand_shows_push_pull_and_pattern_bars(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+            cli_main(["generate", "--days", "4", "--seed", "1", *common])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["balance", *common])
+            self.assertEqual(rc, 0)
+            output = stdout.getvalue()
+            self.assertIn("Push:", output)
+            self.assertIn("Pull:", output)
+            self.assertIn("Boxing Bag", output)
+            self.assertIn("(every day)", output)
 
     def test_backups_subcommand_reports_none_then_lists_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -15,6 +15,11 @@ from . import exercises as ex_pool
 
 DEFAULT_HISTORY_PATH = Path(__file__).resolve().parent.parent / "data" / "history.json"
 
+# A week is "stale" once it's been at least this many days since one was
+# last generated/regenerated/copied in -- a little past a typical week's
+# training cadence, so a short travel/rest gap doesn't trigger it.
+DEFAULT_STALE_DAYS = 10
+
 
 class History:
     def __init__(self, data=None):
@@ -267,6 +272,18 @@ class History:
                     break
 
         return {"current_streak": current, "longest_streak": longest, "total_active_days": len(dates)}
+
+    def days_since_last_week_generated(self, today: date = None):
+        """Days since the most recently generated/regenerated/copied-in
+        week's own generated_at date, or None if no week exists yet.
+        Distinct from streaks (which tracks day *completions*): this
+        tracks how long it's been since a plan was last built at all --
+        see web_server.py's stale-week reminder and DEFAULT_STALE_DAYS."""
+        if not self.weeks:
+            return None
+        today = today or date.today()
+        latest_generated_at = max(w["generated_at"] for w in self.weeks)
+        return (today - date.fromisoformat(latest_generated_at)).days
 
     def last_log(self, exercise_name: str) -> dict:
         """The most recent *logged* occurrence of this exercise -- one with

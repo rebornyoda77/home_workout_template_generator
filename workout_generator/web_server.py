@@ -14,13 +14,13 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 
 from . import exercises as ex_pool
 from . import users
-from .day_builder import EVERY_DAY_PATTERNS
+from .balance import pattern_rows, push_pull_totals
 from .export import history_to_csv
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
 )
-from .history import History
+from .history import DEFAULT_STALE_DAYS, History
 from .progression import suggestion_for
 from .user_paths import DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir
 from .week_builder import DELOAD_INTERVAL_WEEKS
@@ -148,10 +148,13 @@ def create_app(
         history = History.load(_history_path())
         latest_week = history.weeks[-1] if history.weeks else None
         suggestions = _exercise_suggestions(history, latest_week) if latest_week else {}
+        stale_days = history.days_since_last_week_generated()
+        if stale_days is not None and stale_days < DEFAULT_STALE_DAYS:
+            stale_days = None
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
             suggestions=suggestions, pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            streaks=history.streaks(),
+            streaks=history.streaks(), stale_days=stale_days,
         )
 
     @app.route("/generate", methods=["POST"])
@@ -419,20 +422,9 @@ def create_app(
     @app.route("/balance")
     def balance():
         history = History.load(_history_path())
-        rows = []
-        for pattern in ex_pool.ALL_PATTERNS:
-            count = sum(history.use_count.get(e.name, 0) for e in ex_pool.by_pattern(pattern))
-            rows.append({
-                "key": pattern,
-                "label": ex_pool.PATTERN_LABELS[pattern],
-                "count": count,
-                "every_day": pattern in EVERY_DAY_PATTERNS,
-            })
+        rows = pattern_rows(history)
         max_count = max((r["count"] for r in rows), default=0)
-        for r in rows:
-            r["pct"] = round(r["count"] / max_count * 100, 1) if max_count else 0
-        push_total = sum(r["count"] for r in rows if r["key"] in (ex_pool.PUSH_H, ex_pool.PUSH_V))
-        pull_total = sum(r["count"] for r in rows if r["key"] in (ex_pool.PULL_H, ex_pool.PULL_V))
+        push_total, pull_total = push_pull_totals(rows)
         return render_template(
             "balance.html", active_page="balance", rows=rows, max_count=max_count,
             push_total=push_total, pull_total=pull_total,
