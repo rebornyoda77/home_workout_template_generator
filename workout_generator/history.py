@@ -107,6 +107,36 @@ class History:
     def week_by_index(self, week_index: int):
         return next((w for w in self.weeks if w["week_index"] == week_index), None)
 
+    def rate_week(self, week_index: int, rating) -> bool:
+        """Sets (or, with rating=None, clears) a week's 1-5 star rating --
+        how it actually felt to train, as opposed to the per-exercise
+        "feel" logged on individual sets. Returns True if the week existed.
+        See week_builder._template_bias for how this feeds back into
+        which day templates get favored in future weeks."""
+        if rating is not None and rating not in (1, 2, 3, 4, 5):
+            raise ValueError("rating must be 1-5 or None")
+        week = self.week_by_index(week_index)
+        if week is None:
+            return False
+        week["rating"] = rating
+        return True
+
+    def template_average_ratings(self) -> dict:
+        """Maps each day-template title to the average rating (1-5) across
+        every rated week that included a day using that title. A title with
+        no rated weeks behind it is left out entirely -- callers should
+        treat a missing title as neutral rather than as a rating of 0."""
+        totals = {}
+        counts = {}
+        for week in self.weeks:
+            rating = week.get("rating")
+            if rating is None:
+                continue
+            for title in {day["title"] for day in week["days"]}:
+                totals[title] = totals.get(title, 0) + rating
+                counts[title] = counts.get(title, 0) + 1
+        return {title: totals[title] / counts[title] for title in totals}
+
     def _recompute_aggregates(self) -> None:
         """Rebuilds last_used/use_count from scratch by replaying self.weeks
         in week_index order -- used after deleting a week, since last_used

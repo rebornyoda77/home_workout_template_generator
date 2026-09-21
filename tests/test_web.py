@@ -169,6 +169,50 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertIn(b"doesn&#39;t exist", response.data)
 
+    def test_rate_week_requires_valid_csrf_token(self):
+        self._generate_week()
+        response = self.client.post("/week/1/rate", data={"rating": "4", "csrf_token": "bogus"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_rate_week_sets_and_shows_the_rating(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/rate", data={"rating": "4", "csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Rated Week 1", response.data)
+        self.assertIn(b'class="star-button star-filled"', response.data)
+
+    def test_rate_week_can_be_cleared(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post("/week/1/rate", data={"rating": "4", "csrf_token": csrf})
+
+        response = self.client.post(
+            "/week/1/rate", data={"rating": "", "csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"Cleared Week 1", response.data)
+        self.assertNotIn(b'class="star-button star-filled"', response.data)
+
+    def test_rate_unknown_week_flashes_message(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/week/999/rate", data={"rating": "3", "csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
+    def test_history_page_shows_rating_column(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post("/week/1/rate", data={"rating": "3", "csrf_token": csrf})
+
+        response = self.client.get("/history")
+        self.assertIn("★★★".encode(), response.data)
+
     def test_glossary_requires_login(self):
         response = self.client.get("/glossary")
         self.assertEqual(response.status_code, 302)
@@ -405,6 +449,37 @@ class WebServerTests(unittest.TestCase):
         response = self._generate_week()
         self.assertIn(b"Open in Focus Mode", response.data)
         self.assertIn(b'href="/week/1/day/0/today"', response.data)
+
+    def test_manifest_is_served_without_login_and_has_required_fields(self):
+        response = self.client.get("/static/manifest.json")
+        self.assertEqual(response.status_code, 200)
+        manifest = response.get_json()
+        self.assertEqual(manifest["name"], "Home Workout Generator")
+        self.assertEqual(manifest["start_url"], "/today")
+        self.assertEqual(manifest["display"], "standalone")
+        sizes = {icon["sizes"] for icon in manifest["icons"]}
+        self.assertEqual(sizes, {"192x192", "512x512"})
+        for icon in manifest["icons"]:
+            icon_response = self.client.get(icon["src"])
+            self.assertEqual(icon_response.status_code, 200, icon["src"])
+            self.assertEqual(icon_response.mimetype, "image/png")
+
+    def test_service_worker_is_served_without_login(self):
+        response = self.client.get("/static/sw.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"addEventListener", response.data)
+
+    def test_login_page_links_manifest_and_apple_touch_icon(self):
+        response = self.client.get("/login")
+        self.assertIn(b'rel="manifest"', response.data)
+        self.assertIn(b'rel="apple-touch-icon"', response.data)
+        self.assertIn(b'name="apple-mobile-web-app-capable" content="yes"', response.data)
+
+    def test_dashboard_links_manifest_and_registers_service_worker(self):
+        self._login()
+        response = self.client.get("/")
+        self.assertIn(b'rel="manifest"', response.data)
+        self.assertIn(b"serviceWorker.register", response.data)
 
 
 if __name__ == "__main__":

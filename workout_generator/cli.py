@@ -6,11 +6,11 @@ from . import exercises as ex_pool
 from .backup import DEFAULT_KEEP
 from .generate import (
     DEFAULT_OUTPUT_DIR, delete_week, find_exclusion_violations, generate_week,
-    regenerate_week, resolve_excluded_names,
+    rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_HISTORY_PATH, History
 
-COMMANDS = ("generate", "list", "delete", "regenerate", "backups")
+COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate")
 
 
 def _common_paths(parser):
@@ -93,6 +93,13 @@ def build_arg_parser():
     _exclusion_args(regenerate_parser)
     _common_paths(regenerate_parser)
 
+    rate_parser = sub.add_parser("rate", help="Rate (or clear the rating on) a past week.")
+    rate_parser.add_argument("--week", type=int, required=True, help="Week number to rate.")
+    rate_group = rate_parser.add_mutually_exclusive_group(required=True)
+    rate_group.add_argument("--stars", type=int, choices=(1, 2, 3, 4, 5), help="Rating, 1-5.")
+    rate_group.add_argument("--clear", action="store_true", help="Clear that week's rating.")
+    _common_paths(rate_parser)
+
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
         "--history-file", type=Path, default=DEFAULT_HISTORY_PATH,
@@ -147,7 +154,12 @@ def _cmd_list(args) -> int:
         return 0
     for week in history.weeks:
         titles = ", ".join(day["title"] for day in week["days"])
-        print(f"Week {week['week_index']} ({week['generated_at']}, {len(week['days'])} days): {titles}")
+        rating = week.get("rating")
+        rating_suffix = f", {'*' * rating} rated" if rating else ""
+        print(
+            f"Week {week['week_index']} ({week['generated_at']}, {len(week['days'])} days"
+            f"{rating_suffix}): {titles}"
+        )
     return 0
 
 
@@ -185,6 +197,16 @@ def _cmd_regenerate(args) -> int:
     return 0
 
 
+def _cmd_rate(args) -> int:
+    rating = None if args.clear else args.stars
+    updated = rate_week(args.week, rating, history_path=args.history_file)
+    if not updated:
+        print(f"Week {args.week} doesn't exist.", file=sys.stderr)
+        return 1
+    print(f"Cleared week {args.week}'s rating." if rating is None else f"Rated week {args.week}: {rating} stars.")
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(args.history_file)
     backups_dir = history_path.parent / "backups"
@@ -203,6 +225,7 @@ _HANDLERS = {
     "list": _cmd_list,
     "delete": _cmd_delete,
     "regenerate": _cmd_regenerate,
+    "rate": _cmd_rate,
     "backups": _cmd_backups,
 }
 

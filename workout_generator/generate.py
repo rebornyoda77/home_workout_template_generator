@@ -107,6 +107,23 @@ def log_day(
     return updated
 
 
+def rate_week(
+    week_index: int,
+    rating,
+    *,
+    history_path: Path = DEFAULT_HISTORY_PATH,
+) -> bool:
+    """Sets or clears a week's 1-5 star rating (rating=None clears it) --
+    see History.rate_week. Returns True if the week existed and was
+    updated."""
+    history = History.load(history_path)
+    updated = history.rate_week(week_index, rating)
+    if updated:
+        history.save(history_path)
+        backup_history(history_path)
+    return updated
+
+
 def delete_week(
     week_index: int,
     *,

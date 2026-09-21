@@ -11,12 +11,39 @@ from .day_builder import DAY_TEMPLATES, build_day, exercise_names
 from .history import History
 
 
-def _select_templates(num_days, start_offset):
+def _template_bias(avg_rating) -> float:
+    """Turns a template's average week rating (1-5) into a +/-3 nudge on
+    top of its rotation position -- neutral (0) when the template has no
+    rated weeks behind it yet, so an unrated app behaves exactly like the
+    old pure-rotation selection below."""
+    if avg_rating is None:
+        return 0.0
+    return (avg_rating - 3) * 1.5
+
+
+def _select_templates(num_days, start_offset, rating_bias=None):
+    """Picks which day templates make up this week. Rotation (starting
+    from `start_offset`, which slot_index derives) decides the baseline
+    order so a given week slot still leans toward the same flavor as
+    before; `rating_bias` (title -> +/-3, from _template_bias) can then
+    outrank that position, so templates behind consistently well-rated
+    weeks get chosen more often -- and ones behind poorly-rated weeks less
+    often -- for weeks that don't have room for all of them. With no
+    ratings at all, every bias is 0 and this reduces to plain rotation."""
+    rating_bias = rating_bias or {}
     n = len(DAY_TEMPLATES)
     if num_days > n:
         # more days requested than distinct templates: cycle through them
         return [DAY_TEMPLATES[(start_offset + i) % n] for i in range(num_days)]
-    return [DAY_TEMPLATES[(start_offset + i) % n] for i in range(num_days)]
+
+    rotation_order = [DAY_TEMPLATES[(start_offset + i) % n] for i in range(n)]
+    ranked = sorted(
+        enumerate(rotation_order),
+        key=lambda pair: (n - pair[0]) + rating_bias.get(pair[1]["title"], 0.0),
+        reverse=True,
+    )
+    chosen_titles = {template["title"] for _, template in ranked[:num_days]}
+    return [template for template in rotation_order if template["title"] in chosen_titles]
 
 
 def serialize_day(day: dict) -> dict:
@@ -35,6 +62,7 @@ def serialize_day(day: dict) -> dict:
                 "type": block["type"],
                 "title": block["title"],
                 "structure": block["structure"],
+                "timer": block["timer"],
                 "exercises": [{**asdict(e), "actual": "", "feel": ""} for e in block["exercises"]],
             }
             for block in day["blocks"]
@@ -57,7 +85,8 @@ def _build_days(
     scoring, which always runs off history's live week counter -- see
     History.record_week's docstring for why that matters for regenerate."""
     start_offset = (slot_index - 1) % len(DAY_TEMPLATES)
-    templates = _select_templates(num_days, start_offset)
+    rating_bias = {title: _template_bias(avg) for title, avg in history.template_average_ratings().items()}
+    templates = _select_templates(num_days, start_offset, rating_bias)
 
     used_this_week = set()
     days = []
