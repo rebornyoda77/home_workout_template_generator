@@ -39,6 +39,7 @@ python main.py regenerate --week 3      # reroll week 3's exercises, same slot/d
 python main.py regenerate --week 3 --days 4   # ...and change its day count too
 python main.py rate --week 3 --stars 5  # rate how week 3 went (1-5)
 python main.py rate --week 3 --clear    # remove that rating
+python main.py streaks                  # current/longest day-completion streaks
 
 # bench specific exercises or a whole movement pattern for this week (e.g. a sore shoulder):
 python main.py generate --exclude-exercise "Shoulder Press Half-Kneeling"
@@ -88,6 +89,13 @@ repeat too often" logic depends on, so it's worth protecting.
 `python main.py backups` (add `--user <name>` for a specific person) lists
 what's there; to restore one, just copy it back over that same
 `history.json`.
+
+Marking a day complete for the first time (see "Web interface" below)
+stamps it with today's date; `python main.py streaks` (or the dashboard,
+which shows the same numbers) turns those dates into a current streak
+(consecutive calendar days with a completed workout -- still counts as
+current if you haven't logged today's yet, so it doesn't reset just because
+the day isn't over) and your longest streak ever, per account.
 
 ## Day structure
 
@@ -155,6 +163,14 @@ field -- "Save Log" persists it to that day's entry in your account's own
 `history.json` (also picked up by `python main.py list --user <name>`/
 `backups`, and backed up like
 everything else). A completed day gets a badge next to its title.
+
+The first time you mark a day complete, it's stamped with today's date --
+once there's at least one, the Dashboard shows a small streak panel above
+the generate form: your current streak (consecutive calendar days with a
+completed workout; still counts as current if today's isn't logged yet, so
+it doesn't drop to zero mid-day), your longest streak ever, and your total
+completed workouts, all scoped to your own account. CLI parity: `python
+main.py streaks`.
 
 Once an exercise has been logged, its most recent "too easy/right/hard"
 rating turns into a plain-language suggestion for next time (e.g. `last

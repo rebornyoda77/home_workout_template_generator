@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import date
 from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
@@ -181,6 +182,99 @@ class HistoryTests(unittest.TestCase):
         # must not raise -- an out-of-range block/exercise index is just skipped
         updated = history.update_day_log(1, 0, exercise_logs={(999, 0): {"actual": "x"}, (0, 999): {"actual": "y"}})
         self.assertTrue(updated)  # the call itself still succeeds (week/day existed)
+
+    def test_update_day_log_stamps_completed_at_on_first_completion(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        day = history.week_by_index(1)["days"][0]
+        self.assertEqual(day["completed_at"], date.today().isoformat())
+
+    def test_update_day_log_does_not_restamp_completed_at_on_resave(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        history.week_by_index(1)["days"][0]["completed_at"] = "2020-01-01"  # simulate an older completion
+        history.update_day_log(1, 0, completed=True, notes="still done")  # re-saving shouldn't move the date
+        self.assertEqual(history.week_by_index(1)["days"][0]["completed_at"], "2020-01-01")
+
+    def test_update_day_log_clears_completed_at_when_uncompleted(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        history.update_day_log(1, 0, completed=False)
+        self.assertEqual(history.week_by_index(1)["days"][0]["completed_at"], "")
+
+    def test_completed_dates_returns_sorted_unique_dates(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        history.week_by_index(1)["days"][0]["completed_at"] = "2026-09-10"
+        history.update_day_log(1, 1, completed=True)
+        history.week_by_index(1)["days"][1]["completed_at"] = "2026-09-08"
+
+        self.assertEqual(history.completed_dates(), ["2026-09-08", "2026-09-10"])
+
+    def test_streaks_on_empty_history(self):
+        history = History()
+        self.assertEqual(
+            history.streaks(), {"current_streak": 0, "longest_streak": 0, "total_active_days": 0}
+        )
+
+    def test_streaks_current_streak_counts_consecutive_days_ending_today(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        for day_index, completed_at in enumerate(["2026-09-18", "2026-09-19", "2026-09-20"]):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        stats = history.streaks(today=date(2026, 9, 20))
+        self.assertEqual(stats["current_streak"], 3)
+        self.assertEqual(stats["longest_streak"], 3)
+        self.assertEqual(stats["total_active_days"], 3)
+
+    def test_streaks_current_streak_survives_a_one_day_gap_from_today(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        history.week_by_index(1)["days"][0]["completed_at"] = "2026-09-19"
+
+        # yesterday's workout is logged, today's isn't yet -- still current
+        stats = history.streaks(today=date(2026, 9, 20))
+        self.assertEqual(stats["current_streak"], 1)
+
+    def test_streaks_current_streak_resets_after_a_missed_day(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        history.update_day_log(1, 0, completed=True)
+        history.week_by_index(1)["days"][0]["completed_at"] = "2026-09-17"
+
+        stats = history.streaks(today=date(2026, 9, 20))  # 3 days ago -- streak broken
+        self.assertEqual(stats["current_streak"], 0)
+        self.assertEqual(stats["longest_streak"], 1)
+
+    def test_streaks_longest_streak_tracks_best_historical_run_even_after_it_breaks(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        dates = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-10"]
+        for day_index, completed_at in enumerate(dates):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        stats = history.streaks(today=date(2026, 9, 20))
+        self.assertEqual(stats["longest_streak"], 3)
+        self.assertEqual(stats["current_streak"], 0)
+        self.assertEqual(stats["total_active_days"], 4)
 
     def test_last_log_returns_none_when_never_logged(self):
         history = History()
@@ -1209,6 +1303,30 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             with redirect_stderr(io.StringIO()):
                 cli_main(["generate", "--exclude-pattern", "not_a_real_pattern"])
+
+    def test_streaks_subcommand_reports_current_and_longest(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            history_path = Path(tmp_dir) / "history.json"
+            output_dir = Path(tmp_dir) / "output"
+            common = ["--history-file", str(history_path), "--output-dir", str(output_dir)]
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["streaks", *common])
+            self.assertEqual(rc, 0)
+            self.assertIn("Current streak: 0", stdout.getvalue())
+
+            cli_main(["generate", "--days", "3", "--seed", "1", *common])
+            history = History.load(history_path)
+            history.update_day_log(1, 0, completed=True)
+            history.save(history_path)
+
+            stdout2 = io.StringIO()
+            with redirect_stdout(stdout2):
+                rc = cli_main(["streaks", *common])
+            self.assertEqual(rc, 0)
+            self.assertIn("Current streak: 1", stdout2.getvalue())
+            self.assertIn("Total workouts logged: 1", stdout2.getvalue())
 
     def test_backups_subcommand_reports_none_then_lists_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

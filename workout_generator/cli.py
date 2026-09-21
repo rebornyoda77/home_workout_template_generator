@@ -11,7 +11,7 @@ from .generate import (
 )
 from .history import DEFAULT_HISTORY_PATH, History
 
-COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate")
+COMMANDS = ("generate", "list", "delete", "regenerate", "backups", "rate", "streaks")
 
 
 def _common_paths(parser):
@@ -123,6 +123,9 @@ def build_arg_parser():
     rate_group.add_argument("--stars", type=int, choices=(1, 2, 3, 4, 5), help="Rating, 1-5.")
     rate_group.add_argument("--clear", action="store_true", help="Clear that week's rating.")
     _common_paths(rate_parser)
+
+    streaks_parser = sub.add_parser("streaks", help="Show current/longest day-completion streaks.")
+    _common_paths(streaks_parser)
 
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
@@ -238,6 +241,15 @@ def _cmd_rate(args) -> int:
     return 0
 
 
+def _cmd_streaks(args) -> int:
+    history = History.load(_resolve_history_file(args))
+    stats = history.streaks()
+    print(f"Current streak: {stats['current_streak']} day(s)")
+    print(f"Longest streak: {stats['longest_streak']} day(s)")
+    print(f"Total workouts logged: {stats['total_active_days']}")
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
@@ -257,6 +269,7 @@ _HANDLERS = {
     "delete": _cmd_delete,
     "regenerate": _cmd_regenerate,
     "rate": _cmd_rate,
+    "streaks": _cmd_streaks,
     "backups": _cmd_backups,
 }
 

@@ -142,6 +142,7 @@ def create_app(
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
             suggestions=suggestions, pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
+            streaks=history.streaks(),
         )
 
     @app.route("/generate", methods=["POST"])

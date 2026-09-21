@@ -7,6 +7,7 @@ History is persisted as plain JSON so it survives between runs.
 
 import json
 import math
+from datetime import date
 from pathlib import Path
 
 
@@ -185,6 +186,12 @@ class History:
 
         day = week["days"][day_index]
         if completed is not None:
+            if completed and not day.get("completed"):
+                # Stamped only on the False->True transition, so re-saving
+                # notes on an already-completed day doesn't shift its date.
+                day["completed_at"] = date.today().isoformat()
+            elif not completed:
+                day["completed_at"] = ""
             day["completed"] = completed
         if notes is not None:
             day["notes"] = notes
@@ -200,6 +207,52 @@ class History:
             if "feel" in log:
                 exercise["feel"] = log["feel"]
         return True
+
+    def completed_dates(self) -> list:
+        """Sorted list of distinct calendar dates (ISO strings) on which at
+        least one day was logged as completed. A day only gets a
+        completed_at stamp on the False->True transition (see
+        update_day_log), so this reflects when workouts actually happened,
+        not when they were generated or scheduled."""
+        dates = {
+            day["completed_at"]
+            for week in self.weeks
+            for day in week["days"]
+            if day.get("completed_at")
+        }
+        return sorted(dates)
+
+    def streaks(self, today: date = None) -> dict:
+        """Day-streak stats derived from completed_at dates:
+        - current_streak: consecutive calendar days with a completed
+          workout, ending at the most recent completed date -- treated as
+          still "current" (not yet broken) if that date is today or
+          yesterday, so it doesn't drop to 0 just because today's workout
+          hasn't been logged yet.
+        - longest_streak: the best such run ever recorded.
+        - total_active_days: distinct days with at least one completed
+          workout, lifetime.
+        """
+        today = today or date.today()
+        dates = [date.fromisoformat(d) for d in self.completed_dates()]
+        if not dates:
+            return {"current_streak": 0, "longest_streak": 0, "total_active_days": 0}
+
+        longest = run = 1
+        for prev, curr in zip(dates, dates[1:]):
+            run = run + 1 if (curr - prev).days == 1 else 1
+            longest = max(longest, run)
+
+        current = 0
+        if (today - dates[-1]).days <= 1:
+            current = 1
+            for prev, curr in zip(reversed(dates[:-1]), reversed(dates[1:])):
+                if (curr - prev).days == 1:
+                    current += 1
+                else:
+                    break
+
+        return {"current_streak": current, "longest_streak": longest, "total_active_days": len(dates)}
 
     def last_log(self, exercise_name: str) -> dict:
         """The most recent *logged* occurrence of this exercise -- one with

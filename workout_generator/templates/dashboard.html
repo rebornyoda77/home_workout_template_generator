@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Workout Generator{% endblock %}
 {% block content %}
+{% if streaks.total_active_days > 0 %}
+<div class="streak-row no-print">
+  <div class="streak-stat">
+    <span class="streak-value">{{ streaks.current_streak }}</span>
+    <span class="streak-label">day{{ '' if streaks.current_streak == 1 else 's' }} streak</span>
+  </div>
+  <div class="streak-stat">
+    <span class="streak-value">{{ streaks.longest_streak }}</span>
+    <span class="streak-label">best streak</span>
+  </div>
+  <div class="streak-stat">
+    <span class="streak-value">{{ streaks.total_active_days }}</span>
+    <span class="streak-label">total workouts</span>
+  </div>
+</div>
+{% endif %}
 <div class="no-print">
 <h1>Generate a Week</h1>
 <p class="meta">Home equipment only: kettlebells, dumbbells, bands, bench, treadmill, boxing bag, mats.</p>

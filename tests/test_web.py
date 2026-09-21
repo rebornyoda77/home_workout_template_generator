@@ -390,6 +390,23 @@ class WebServerTests(unittest.TestCase):
         )
         self.assertNotIn(b"Completed</span>", response.data)
 
+    def test_dashboard_hides_streak_panel_with_no_completed_days(self):
+        response = self._generate_week()
+        self.assertNotIn(b"day streak", response.data)
+
+    def test_dashboard_shows_streak_panel_after_completing_a_day(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "completed": "on"}, follow_redirects=True,
+        )
+
+        dashboard = self.client.get("/")
+        self.assertIn(b"1", dashboard.data)
+        self.assertIn(b"day streak", dashboard.data)
+        self.assertIn(b"best streak", dashboard.data)
+        self.assertIn(b"total workouts", dashboard.data)
+
     def test_log_day_returns_404_for_unknown_week_or_day(self):
         self._generate_week()
         dashboard = self.client.get("/week/1")
