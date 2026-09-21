@@ -128,6 +128,23 @@ boot, which their own installers already set up), you don't need to redo
 steps 6-8 after a reboot -- only the app's own systemd service needed that
 explicit `enable`.
 
+**Handy aliases**, once the service exists, so you don't have to retype the
+full `systemctl`/`journalctl` invocations every time you tweak something:
+```bash
+cat >> ~/.bashrc <<'EOF'
+alias restart_home_workout_web='sudo systemctl restart home-workout-web'
+alias home_workout_status='sudo systemctl status home-workout-web'
+alias home_workout_logs='sudo journalctl -u home-workout-web -f'
+EOF
+source ~/.bashrc
+```
+(If you use `zsh` instead, append to `~/.zshrc` instead of `~/.bashrc`.) An
+alias still prompts for your sudo password each time; if you'd rather it
+didn't, allow just the restart command without one:
+```
+echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart home-workout-web" | sudo tee /etc/sudoers.d/home-workout-web
+```
+
 **Keep the app's own login even with Tailscale.** Tailscale's network-level
 access control is strong, but anyone who can reach any device already on
 your tailnet (or whose Tailscale account is compromised) could otherwise
