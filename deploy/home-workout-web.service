@@ -22,12 +22,13 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/home_workout_template_generator
 # Uses the venv's python (see the user guide's setup steps: `python3 -m venv
-# .venv && pip install -r requirements.txt`) so this doesn't depend on
-# whatever's on the system Python. Adjust if you installed differently.
+# venv && pip install -r requirements.txt`) so this doesn't depend on
+# whatever's on the system Python. Adjust the path below (and User=/
+# WorkingDirectory= above) if you installed differently.
 # --host 127.0.0.1: only reachable via nginx (or another local reverse
 # proxy) on this same machine, never directly from the network -- see the
 # user guide before changing this to 0.0.0.0.
-ExecStart=/home/pi/home_workout_template_generator/.venv/bin/python web_main.py --host 127.0.0.1 --port 5050
+ExecStart=/home/pi/home_workout_template_generator/venv/bin/python web_main.py --host 127.0.0.1 --port 5050
 Restart=on-failure
 RestartSec=5
 
