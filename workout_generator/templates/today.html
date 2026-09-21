@@ -28,10 +28,12 @@
   <div class="block today-block">
     <h2>{{ block.title }}</h2>
     <p class="block-structure">{{ block.structure }}</p>
+    {% if block.timer %}
     <button type="button" class="button start-timer-btn no-print"
             data-timer='{{ block.timer | tojson }}'
             data-exercises='{{ (block.exercises | map(attribute="name") | list) | tojson }}'
             data-title="{{ block.title }}">Start Timer</button>
+    {% endif %}
     <ul class="exercise-list today-exercise-list">
       {% for exercise in block.exercises %}
       <li>

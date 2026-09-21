@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from workout_generator import web_config, web_server
+from workout_generator.history import History
 
 
 CSRF_RE = re.compile(rb'name="csrf_token" value="([0-9a-f]+)"')
@@ -480,6 +481,55 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertIn(b'rel="manifest"', response.data)
         self.assertIn(b"serviceWorker.register", response.data)
+
+    def test_legacy_week_without_timer_field_still_renders(self):
+        # Weeks generated before the interval-timer feature don't have a
+        # "timer" key on their blocks (see week_builder.serialize_day) --
+        # the page must render around that instead of crashing on
+        # `{{ block.timer | tojson }}` with a real 500.
+        history = History()
+        history.begin_week()
+        legacy_day = {
+            "title": "Legacy Day",
+            "completed": False,
+            "notes": "",
+            "blocks": [
+                {
+                    "type": "superset",
+                    "title": "Block A - Strength Superset",
+                    "structure": "4 rounds: 40s work / 20s rest per exercise",
+                    "exercises": [
+                        {
+                            "name": "Goblet Squat", "pattern": "squat",
+                            "equipment": ["kettlebell", "dumbbell"], "unilateral": False,
+                            "load_hint": "1x KB/DB, 15-25 lb", "note": "", "tags": [],
+                            "description": "", "actual": "", "feel": "",
+                        },
+                    ],
+                },
+            ],
+        }
+        history.record_week("2026-01-01", [legacy_day])
+        history.save(self.app.config["HISTORY_PATH"])
+
+        self._login()
+
+        # the CSS block always defines `.start-timer-btn { ... }` regardless
+        # of whether any button uses it, so check for the rendered button's
+        # own class attribute rather than the bare class-name substring.
+        rendered_button = b'class="button start-timer-btn'
+
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertNotIn(rendered_button, dashboard.data)
+
+        week_response = self.client.get("/week/1")
+        self.assertEqual(week_response.status_code, 200)
+        self.assertNotIn(rendered_button, week_response.data)
+
+        today_response = self.client.get("/week/1/day/0/today")
+        self.assertEqual(today_response.status_code, 200)
+        self.assertNotIn(rendered_button, today_response.data)
 
 
 if __name__ == "__main__":
