@@ -519,6 +519,16 @@ class WebServerTests(unittest.TestCase):
         self.assertGreater(diagram_count, 0)
         self.assertLess(diagram_count, total_exercises)
 
+    def test_glossary_diagram_has_a_matching_hover_zoom_image(self):
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertIn(b'class="glossary-diagram-zoom" src="/static/diagrams/goblet-squat.jpg"', response.data)
+        # the zoom counterpart exists for every thumbnail, one-to-one
+        thumb_count = response.data.count(b'class="glossary-diagram"')
+        zoom_count = response.data.count(b'class="glossary-diagram-zoom"')
+        self.assertEqual(thumb_count, zoom_count)
+        self.assertGreater(zoom_count, 0)
+
     def test_glossary_shows_a_diagram_image_when_one_resolves(self):
         self._login()
         with patch(
