@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Presets — Workout Generator{% endblock %}
+{% block content %}
+<h1>Exclusion Presets</h1>
+<p class="meta">Save a set of benched movement patterns under a name -- e.g. "Sore shoulder" or "Leg day off" -- so
+  you can apply it from a dropdown on the generate/regenerate forms instead of re-checking the same boxes every
+  time.</p>
+
+{% if presets %}
+<table>
+<tr><th>Name</th><th>Excludes</th><th></th></tr>
+{% for preset in presets %}
+<tr>
+  <td>{{ preset.name }}</td>
+  <td>{{ preset.pattern_labels or '—' }}</td>
+  <td class="row-actions">
+    <form method="post" action="{{ url_for('delete_preset_route', name=preset.name) }}" class="inline-form"
+          onsubmit="return confirm('Delete the &quot;{{ preset.name }}&quot; preset?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="button danger-button">Delete</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="empty">No presets saved yet -- create one below.</p>
+{% endif %}
+
+<h2 style="margin-top: 28px;">New Preset</h2>
+<form method="post" action="{{ url_for('save_preset_route') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="preset_name">Name</label>
+  <input type="text" id="preset_name" name="preset_name" placeholder="e.g. Sore shoulder" required maxlength="60">
+  <label style="margin-top: 12px;">Movement patterns to exclude</label>
+  <div class="checkbox-grid">
+    {% for p in pattern_options %}
+    <label><input type="checkbox" name="exclude_patterns" value="{{ p.key }}"> {{ p.label }}</label>
+    {% endfor %}
+  </div>
+  <button type="submit" class="button save-button" style="margin-top: 14px;">Save Preset</button>
+</form>
+{% endblock %}

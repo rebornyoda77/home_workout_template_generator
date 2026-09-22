@@ -62,9 +62,9 @@ def serialize_day(day: dict) -> dict:
     """Turns a day's Exercise dataclass instances into plain dicts so the
     whole week can be stored as JSON in history and redisplayed later
     (e.g. by the web interface) without regenerating it. Also seeds the
-    logging fields (completed/notes per day, actual/feel per exercise --
-    see History.update_day_log) so a freshly generated week has a
-    consistent shape from the start, ready to be logged against."""
+    logging fields (completed/notes per day, actual/feel/weight per
+    exercise -- see History.update_day_log) so a freshly generated week has
+    a consistent shape from the start, ready to be logged against."""
     return {
         "title": day["title"],
         "completed": False,
@@ -75,7 +75,7 @@ def serialize_day(day: dict) -> dict:
                 "title": block["title"],
                 "structure": block["structure"],
                 "timer": block["timer"],
-                "exercises": [{**asdict(e), "actual": "", "feel": ""} for e in block["exercises"]],
+                "exercises": [{**asdict(e), "actual": "", "feel": "", "weight": ""} for e in block["exercises"]],
             }
             for block in day["blocks"]
         ],

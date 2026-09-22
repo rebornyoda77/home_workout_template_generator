@@ -15,14 +15,18 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 from . import exercises as ex_pool
 from . import users
 from .balance import pattern_rows, push_pull_totals
+from .exclusion_presets import delete_preset, list_presets, save_preset
 from .export import history_to_csv
+from .family import household_rows
 from .generate import (
     copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
 )
 from .history import DEFAULT_STALE_DAYS, History
 from .progression import suggestion_for
-from .user_paths import DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir
+from .user_paths import (
+    DEFAULT_DATA_ROOT, DEFAULT_OUTPUT_ROOT, user_history_path, user_output_dir, user_presets_path,
+)
 from .week_builder import DELOAD_INTERVAL_WEEKS
 
 DEFAULT_PORT = 5050
@@ -31,6 +35,19 @@ DEFAULT_PORT = 5050
 def _new_csrf_token() -> str:
     token = secrets.token_hex(16)
     session["csrf_token"] = token
+    return token
+
+
+def _ensure_csrf_token() -> str:
+    """Like _new_csrf_token, but reuses whatever token is already in the
+    session instead of always rotating it. The nav's account-switcher form
+    renders on every page via the context processor below, so it must never
+    invalidate a token a route's own view function already minted (via
+    _new_csrf_token) for that same page's other forms."""
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_hex(16)
+        session["csrf_token"] = token
     return token
 
 
@@ -104,12 +121,23 @@ def create_app(
     def _output_dir() -> Path:
         return user_output_dir(session["username"], app.config["OUTPUT_ROOT"])
 
+    def _presets_path() -> Path:
+        return user_presets_path(session["username"], app.config["DATA_ROOT"])
+
+    def _other_accounts() -> list:
+        return [a for a in users.list_users(app.config["USERS_PATH"]) if a["username"] != session["username"]]
+
     @app.context_processor
     def _inject_template_globals():
         context = {"deload_interval": DELOAD_INTERVAL_WEEKS}
         username = session.get("username")
         if username:
             context["current_display_name"] = users.display_name_for(username, app.config["USERS_PATH"])
+            # Powers the nav's "switch account" dropdown (see switch_account
+            # below) -- shown on every page, so it's injected here rather
+            # than threaded through each route's own render_template call.
+            context["nav_accounts"] = _other_accounts()
+            context["nav_csrf_token"] = _ensure_csrf_token()
         return context
 
     @app.before_request
@@ -143,6 +171,27 @@ def create_app(
         session.pop("username", None)
         return redirect(url_for("login"))
 
+    @app.route("/switch-account", methods=["POST"])
+    def switch_account():
+        """Swaps which account this session is acting as, without a
+        password -- for a household working out together on one shared
+        device/login, where re-authenticating per person to log each of
+        their completions would be the whole point of friction this avoids.
+        Each account's own history/output/presets stay completely separate
+        either way (see _history_path/_output_dir/_presets_path above);
+        this only changes whose data the *next* request reads and writes."""
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        target = users.normalize_username(request.form.get("username", ""))
+        if not target or not users.user_exists(target, app.config["USERS_PATH"]):
+            flash("Pick a valid account to switch to.")
+            return redirect(url_for("dashboard"))
+
+        session["username"] = target
+        flash(f"Switched to {users.display_name_for(target, app.config['USERS_PATH'])}.")
+        return redirect(url_for("dashboard"))
+
     @app.route("/")
     def dashboard():
         history = History.load(_history_path())
@@ -154,7 +203,7 @@ def create_app(
         return render_template(
             "dashboard.html", active_page="dashboard", latest_week=latest_week,
             suggestions=suggestions, pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            streaks=history.streaks(), stale_days=stale_days,
+            streaks=history.streaks(), stale_days=stale_days, presets=list_presets(_presets_path()),
         )
 
     @app.route("/generate", methods=["POST"])
@@ -195,14 +244,11 @@ def create_app(
         entry = history.week_by_index(week_index)
         if entry is None:
             return "That week hasn't been generated.", 404
-        other_accounts = [
-            a for a in users.list_users(app.config["USERS_PATH"]) if a["username"] != session["username"]
-        ]
         return render_template(
             "week.html", active_page="weeks", week=entry,
             suggestions=_exercise_suggestions(history, entry),
             pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            other_accounts=other_accounts,
+            other_accounts=_other_accounts(), presets=list_presets(_presets_path()),
         )
 
     @app.route("/week/<int:week_index>/delete", methods=["POST"])
@@ -328,18 +374,32 @@ def create_app(
         notes = request.form.get("notes", "").strip()
 
         exercise_logs = {}
+        new_prs = []
         for bi, block in enumerate(day["blocks"]):
-            for ei in range(len(block["exercises"])):
+            for ei, exercise in enumerate(block["exercises"]):
                 actual = request.form.get(f"actual_b{bi}_e{ei}")
                 feel = request.form.get(f"feel_b{bi}_e{ei}")
+                weight = request.form.get(f"weight_b{bi}_e{ei}")
                 load_hint = request.form.get(f"load_b{bi}_e{ei}")
-                if actual is None and feel is None and load_hint is None:
+                if actual is None and feel is None and weight is None and load_hint is None:
                     continue
                 log = {}
                 if actual is not None:
                     log["actual"] = actual.strip()
                 if feel is not None:
                     log["feel"] = feel if feel in ("easy", "right", "hard") else ""
+                if weight is not None:
+                    weight = weight.strip()
+                    log["weight"] = weight
+                    if weight:
+                        try:
+                            weight_val = float(weight)
+                        except ValueError:
+                            weight_val = None
+                        if weight_val is not None:
+                            prior_best = history.best_weight(exercise["name"])
+                            if prior_best is None or weight_val > prior_best:
+                                new_prs.append((exercise["name"], weight_val))
                 if load_hint is not None:
                     log["load_hint"] = load_hint.strip()
                 exercise_logs[(bi, ei)] = log
@@ -350,6 +410,8 @@ def create_app(
             completed=completed, notes=notes, exercise_logs=exercise_logs,
         )
         flash(f"Saved log for Day {day_index + 1}.")
+        for name, weight_val in new_prs:
+            flash(f"New PR: {name} at {weight_val:g} lb!")
         if request.form.get("next") == "today":
             return redirect(url_for("today_day", week_index=week_index, day_index=day_index))
         return redirect(url_for("view_week", week_index=week_index))
@@ -413,6 +475,7 @@ def create_app(
                     "last_used_week": history.last_used.get(exercise.name),
                     "use_count": history.use_count.get(exercise.name, 0),
                     "suggestion": suggestion_for(history.last_log(exercise.name)),
+                    "best_weight": history.best_weight(exercise.name),
                 }
                 for exercise in ex_pool.by_pattern(pattern)
             ]
@@ -429,5 +492,48 @@ def create_app(
             "balance.html", active_page="balance", rows=rows, max_count=max_count,
             push_total=push_total, pull_total=pull_total,
         )
+
+    @app.route("/family")
+    def family_page():
+        rows = household_rows(app.config["USERS_PATH"], app.config["DATA_ROOT"])
+        return render_template(
+            "family.html", active_page="family", rows=rows, current_username=session["username"],
+        )
+
+    @app.route("/presets")
+    def presets_page():
+        preset_rows = list_presets(_presets_path())
+        for preset in preset_rows:
+            preset["pattern_labels"] = ", ".join(ex_pool.PATTERN_LABELS[key] for key in preset["patterns"])
+        return render_template(
+            "presets.html", active_page="presets", presets=preset_rows,
+            pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
+        )
+
+    @app.route("/presets", methods=["POST"])
+    def save_preset_route():
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        name = request.form.get("preset_name", "").strip()
+        patterns = _parse_exclude_patterns(request.form)
+        if not name:
+            flash("Give your preset a name.")
+            return redirect(url_for("presets_page"))
+
+        save_preset(name, patterns, _presets_path())
+        flash(f'Saved preset "{name}".')
+        return redirect(url_for("presets_page"))
+
+    @app.route("/presets/<name>/delete", methods=["POST"])
+    def delete_preset_route(name: str):
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        if delete_preset(name, _presets_path()):
+            flash(f'Deleted preset "{name}".')
+        else:
+            flash("That preset doesn't exist.")
+        return redirect(url_for("presets_page"))
 
     return app

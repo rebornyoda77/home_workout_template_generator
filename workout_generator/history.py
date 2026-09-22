@@ -7,7 +7,7 @@ History is persisted as plain JSON so it survives between runs.
 
 import json
 import math
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from . import exercises as ex_pool
@@ -186,17 +186,21 @@ class History:
     ) -> bool:
         """Records what actually happened on one day of a generated week:
         whether it was completed, free-text notes, and per-exercise "actual"
-        (what was really used, e.g. "20 lb x10") + "feel" (easy/right/hard).
-        `exercise_logs` can also carry a "load_hint" -- unlike actual/feel
-        (a log of what happened that session), this edits the *prescribed*
-        load stored on this week's own copy of the exercise, e.g. so a week
-        copied from someone else's history (see generate.copy_week) can be
-        retargeted to different weights/reps without touching the shared
-        exercise pool or the account it was copied from.
+        (what was really used, e.g. "20 lb x10") + "feel" (easy/right/hard)
+        + an optional numeric "weight" (just the number lifted, e.g. 20.0 --
+        kept separate from the free-text "actual" specifically so it can be
+        compared reliably across logs for PR tracking; see best_weight).
+        `exercise_logs` can also carry a "load_hint" -- unlike actual/feel/
+        weight (a log of what happened that session), this edits the
+        *prescribed* load stored on this week's own copy of the exercise,
+        e.g. so a week copied from someone else's history (see
+        generate.copy_week) can be retargeted to different weights/reps
+        without touching the shared exercise pool or the account it was
+        copied from.
         Any argument left as None is left unchanged. `exercise_logs` maps
         (block_index, exercise_index) -> {"actual": str, "feel": str,
-        "load_hint": str}. Returns True if the week/day existed and was
-        updated."""
+        "weight": str, "load_hint": str}. Returns True if the week/day
+        existed and was updated."""
         week = self.week_by_index(week_index)
         if week is None or not (0 <= day_index < len(week["days"])):
             return False
@@ -223,9 +227,32 @@ class History:
                 exercise["actual"] = log["actual"]
             if "feel" in log:
                 exercise["feel"] = log["feel"]
+            if "weight" in log:
+                exercise["weight"] = log["weight"]
             if "load_hint" in log:
                 exercise["load_hint"] = log["load_hint"]
         return True
+
+    def best_weight(self, exercise_name: str):
+        """The heaviest weight ever logged for this exercise, across every
+        week -- None if it's never been logged with a (parseable) weight.
+        Powers PR tracking: web_server.py compares a freshly submitted
+        weight against this (read *before* saving the new log) to decide
+        whether to flash "New PR"."""
+        best = None
+        for week in self.weeks:
+            for day in week["days"]:
+                for block in day["blocks"]:
+                    for exercise in block["exercises"]:
+                        if exercise.get("name") != exercise_name:
+                            continue
+                        try:
+                            w = float(exercise.get("weight") or "")
+                        except (TypeError, ValueError):
+                            continue
+                        if best is None or w > best:
+                            best = w
+        return best
 
     def completed_dates(self) -> list:
         """Sorted list of distinct calendar dates (ISO strings) on which at
@@ -240,6 +267,18 @@ class History:
             if day.get("completed_at")
         }
         return sorted(dates)
+
+    def completed_days_this_week(self, today: date = None) -> int:
+        """Count of distinct days completed within the current calendar
+        week (Monday-Sunday) containing `today` -- powers the household
+        summary's "this week" column (see family.py)."""
+        today = today or date.today()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        return sum(
+            1 for d in self.completed_dates()
+            if monday <= date.fromisoformat(d) <= sunday
+        )
 
     def streaks(self, today: date = None) -> dict:
         """Day-streak stats derived from completed_at dates:

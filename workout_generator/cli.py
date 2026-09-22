@@ -8,6 +8,7 @@ from . import users
 from .backup import DEFAULT_KEEP
 from .balance import pattern_rows, push_pull_totals
 from .export import history_to_csv
+from .family import household_rows
 from .generate import (
     DEFAULT_OUTPUT_DIR, copy_week, delete_week, find_exclusion_violations, generate_week,
     log_day, rate_week, regenerate_week, resolve_excluded_names,
@@ -17,7 +18,7 @@ from .week_builder import DELOAD_INTERVAL_WEEKS
 
 COMMANDS = (
     "generate", "list", "delete", "regenerate", "backups", "rate", "streaks", "copy", "export",
-    "log", "balance",
+    "log", "balance", "family",
 )
 
 
@@ -183,6 +184,18 @@ def build_arg_parser():
 
     balance_parser = sub.add_parser("balance", help="Show movement-pattern usage counts (lifetime).")
     _common_paths(balance_parser)
+
+    family_parser = sub.add_parser(
+        "family", help="Show a household summary: every account's this-week completions and streaks, side by side.",
+    )
+    family_parser.add_argument(
+        "--users-file", type=Path, default=None,
+        help=f"Path to the accounts JSON file (default: {users.DEFAULT_USERS_PATH}).",
+    )
+    family_parser.add_argument(
+        "--data-dir", type=Path, default=None,
+        help=f"Root directory holding each account's own history.json (default: {user_paths.DEFAULT_DATA_ROOT}).",
+    )
 
     backups_parser = sub.add_parser("backups", help="List history.json backup snapshots.")
     backups_parser.add_argument(
@@ -388,6 +401,23 @@ def _cmd_balance(args) -> int:
     return 0
 
 
+def _cmd_family(args) -> int:
+    users_path = args.users_file or users.DEFAULT_USERS_PATH
+    data_root = args.data_dir or user_paths.DEFAULT_DATA_ROOT
+    rows = household_rows(users_path, data_root)
+    if not rows:
+        print("No accounts yet -- see 'python web_main.py --add-user'.")
+        return 0
+
+    print(f"{'Name':<22} {'This week':<11} {'Current':<9} {'Longest':<9} {'Total':<7}")
+    for r in rows:
+        print(
+            f"{r['display_name']:<22} {r['completed_this_week']:<11} "
+            f"{r['current_streak']:<9} {r['longest_streak']:<9} {r['total_active_days']:<7}"
+        )
+    return 0
+
+
 def _cmd_backups(args) -> int:
     history_path = Path(_resolve_history_file(args))
     backups_dir = history_path.parent / "backups"
@@ -412,6 +442,7 @@ _HANDLERS = {
     "export": _cmd_export,
     "log": _cmd_log,
     "balance": _cmd_balance,
+    "family": _cmd_family,
     "backups": _cmd_backups,
 }
 

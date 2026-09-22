@@ -2,9 +2,19 @@
   <summary>Exclude movement patterns (optional)</summary>
   <p class="hint">Bench a pattern for this week -- e.g. a sore shoulder -&gt; exclude Vertical Push. When a
     pattern is unavoidable for a block with no substitute, it may still show up; you'll get a warning if so.</p>
+  {% if presets %}
+  <label>Apply a saved preset</label>
+  <select class="preset-apply-select">
+    <option value="">Choose a preset…</option>
+    {% for preset in presets %}
+    <option value="{{ preset.patterns | join(',') }}">{{ preset.name }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
   <div class="checkbox-grid">
     {% for p in pattern_options %}
     <label><input type="checkbox" name="exclude_patterns" value="{{ p.key }}"> {{ p.label }}</label>
     {% endfor %}
   </div>
+  <p class="hint"><a href="{{ url_for('presets_page') }}">Manage saved presets</a></p>
 </details>

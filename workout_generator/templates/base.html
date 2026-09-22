@@ -44,6 +44,12 @@
   nav a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   nav .spacer { flex: 1 1 auto; }
   .current-user { font-size: 12.5px; color: var(--text-muted); padding: 6px 8px; white-space: nowrap; }
+  .switch-account-form { display: inline-flex; align-items: center; margin: 0; }
+  .switch-account-select {
+    width: auto; margin: 0; padding: 6px 8px; font-size: 12.5px; font-weight: 500;
+    color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer;
+  }
+  .switch-account-select:hover, .switch-account-select:focus { color: var(--text); background: var(--bg); border-color: var(--border); box-shadow: none; }
   main.content-wrap { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; }
   .flash { background: var(--accent-soft); border: 1px solid var(--accent-soft-border); color: var(--accent-hover); border-radius: var(--radius-sm); padding: 10px 14px; margin: 0 0 20px; font-size: 13.5px; }
@@ -77,12 +83,14 @@
   .log-complete-toggle { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; font-size: 13.5px; font-weight: 600; color: var(--text); }
   .log-complete-toggle input { width: auto; }
   .log-row { display: flex; gap: 6px; margin-top: 5px; }
+  .log-weight { flex: 0 0 78px; padding: 6px 9px; font-size: 12.5px; }
   .log-actual { flex: 2 1 auto; padding: 6px 9px; font-size: 12.5px; }
   .log-feel { flex: 1 1 auto; padding: 6px 9px; font-size: 12.5px; max-width: 130px; }
   .log-form textarea { width: 100%; padding: 9px 11px; font-size: 14px; font-family: inherit; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); resize: vertical; }
   .log-form .button { margin-top: 12px; }
   .tag-completed { color: var(--accent-hover); background: var(--accent-soft); border: 1px solid var(--accent-soft-border); border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; vertical-align: middle; }
   .tag-deload { color: #3d6b93; background: #eaf3fb; border: 1px solid #cfe3f5; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; vertical-align: middle; }
+  .tag-pr { color: #8a6400; background: #fff6e0; border: 1px solid #f5e3ad; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; vertical-align: middle; }
   .today-nav { display: flex; gap: 10px; margin: 4px 0 22px; }
   .today-nav .button { flex: 1 1 auto; text-align: center; padding: 14px; font-size: 15px; font-weight: 600; }
   .today-view h1 { font-size: 22px; }
@@ -92,7 +100,7 @@
   .today-exercise-list li { padding: 12px 0; font-size: 16px; }
   .today-exercise-list .exercise-name { font-size: 17px; }
   .today-exercise-list .exercise-load { font-size: 14px; }
-  .today-log-form .log-actual, .today-log-form .log-feel { padding: 10px 12px; font-size: 14px; }
+  .today-log-form .log-weight, .today-log-form .log-actual, .today-log-form .log-feel { padding: 10px 12px; font-size: 14px; }
   .today-log-form .log-row { margin-top: 8px; }
   .start-timer-btn { margin: 4px 0 10px; }
   .timer-modal { display: none; position: fixed; inset: 0; background: rgba(16, 20, 26, .6); align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
@@ -210,6 +218,7 @@
     .exercise-row { flex-direction: column; gap: 0; }
     .exercise-load-input { width: 100%; text-align: left; margin-top: 2px; }
     .log-row { flex-direction: column; }
+    .log-weight { flex-basis: auto; width: 100%; }
     .log-feel { max-width: none; }
     .balance-label { flex-basis: 120px; font-size: 12px; }
     .balance-everyday-tag { display: block; margin: 2px 0 0; width: fit-content; }
@@ -245,8 +254,22 @@
   <a href="{{ url_for('history_page') }}" class="{{ 'active' if active_page in ('history', 'weeks') else '' }}">History</a>
   <a href="{{ url_for('glossary') }}" class="{{ 'active' if active_page == 'glossary' else '' }}">Glossary</a>
   <a href="{{ url_for('balance') }}" class="{{ 'active' if active_page == 'balance' else '' }}">Balance</a>
+  <a href="{{ url_for('family_page') }}" class="{{ 'active' if active_page == 'family' else '' }}">Family</a>
+  <a href="{{ url_for('presets_page') }}" class="{{ 'active' if active_page == 'presets' else '' }}">Presets</a>
   <span class="spacer"></span>
+  {% if nav_accounts %}
+  <form method="post" action="{{ url_for('switch_account') }}" class="switch-account-form">
+    <input type="hidden" name="csrf_token" value="{{ nav_csrf_token }}">
+    <select name="username" class="switch-account-select" onchange="this.form.submit()" aria-label="Switch account">
+      <option value="{{ session.username }}" selected>{{ current_display_name }}</option>
+      {% for a in nav_accounts %}
+      <option value="{{ a.username }}">{{ a.display_name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% else %}
   <span class="current-user">{{ current_display_name }}</span>
+  {% endif %}
   <a href="{{ url_for('logout') }}">Log out</a>
 </nav>
 </div>
@@ -506,6 +529,20 @@
       btn.addEventListener('click', function () {
         window.openWorkoutTimer(btn.getAttribute('data-timer'), btn.getAttribute('data-exercises'), btn.getAttribute('data-title'));
       });
+    });
+  });
+})();
+</script>
+<script>
+(function () {
+  document.querySelectorAll('.preset-apply-select').forEach(function (select) {
+    select.addEventListener('change', function () {
+      var scope = select.closest('details') || document;
+      var wanted = select.value ? select.value.split(',') : [];
+      scope.querySelectorAll('.checkbox-grid input[type="checkbox"]').forEach(function (box) {
+        box.checked = wanted.indexOf(box.value) !== -1;
+      });
+      select.value = '';
     });
   });
 })();

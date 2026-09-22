@@ -11,6 +11,8 @@ from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
 from workout_generator import cli as cli_module
+from workout_generator import exclusion_presets as presets_module
+from workout_generator import family as family_module
 from workout_generator import generate as generate_module
 from workout_generator.backup import backup_history
 from workout_generator.cli import main as cli_main
@@ -155,6 +157,7 @@ class HistoryTests(unittest.TestCase):
                 for exercise in block["exercises"]:
                     self.assertEqual(exercise["actual"], "")
                     self.assertEqual(exercise["feel"], "")
+                    self.assertEqual(exercise["weight"], "")
 
     def test_update_day_log_sets_completed_and_notes(self):
         history = History()
@@ -177,6 +180,16 @@ class HistoryTests(unittest.TestCase):
         exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
         self.assertEqual(exercise["actual"], "20 lb x10")
         self.assertEqual(exercise["feel"], "easy")
+
+    def test_update_day_log_sets_per_exercise_weight(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        updated = history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "25"}})
+        self.assertTrue(updated)
+
+        exercise = history.week_by_index(1)["days"][0]["blocks"][0]["exercises"][0]
+        self.assertEqual(exercise["weight"], "25")
 
     def test_update_day_log_edits_the_prescribed_load_hint(self):
         history = History()
@@ -259,6 +272,34 @@ class HistoryTests(unittest.TestCase):
         history.week_by_index(1)["days"][1]["completed_at"] = "2026-09-08"
 
         self.assertEqual(history.completed_dates(), ["2026-09-08", "2026-09-10"])
+
+    def test_completed_days_this_week_is_zero_before_anything_is_logged(self):
+        history = History()
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 0)
+
+    def test_completed_days_this_week_counts_only_this_calendar_week(self):
+        # 2026-09-20 is a Sunday -- its week runs Mon 09-14 through Sun 09-20.
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        for day_index, completed_at in enumerate(["2026-09-14", "2026-09-18"]):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 2)
+
+    def test_completed_days_this_week_excludes_dates_outside_the_window(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        days = history.week_by_index(1)["days"]
+
+        # one day before this week's Monday, one day after this week's Sunday
+        for day_index, completed_at in enumerate(["2026-09-13", "2026-09-21"]):
+            history.update_day_log(1, day_index, completed=True)
+            days[day_index]["completed_at"] = completed_at
+
+        self.assertEqual(history.completed_days_this_week(today=date(2026, 9, 20)), 0)
 
     def test_streaks_on_empty_history(self):
         history = History()
@@ -399,6 +440,57 @@ class HistoryTests(unittest.TestCase):
         result = history.last_log(name)
         self.assertIsNotNone(result)
         self.assertEqual(result["week_index"], 1)  # not silently overridden by an unlogged week 2
+
+    def test_best_weight_returns_none_when_never_logged(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+        self.assertIsNone(history.best_weight("Goblet Squat"))
+
+    def test_best_weight_finds_a_logged_numeric_weight(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "20"}})
+
+        self.assertEqual(history.best_weight(name), 20.0)
+
+    def test_best_weight_ignores_non_numeric_weight_strings(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "heavy-ish"}})
+
+        self.assertIsNone(history.best_weight(name))
+
+    def test_best_weight_is_the_max_across_every_week(self):
+        history = History()
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-06")  # week 1
+        build_week(4, history, rng=random.Random(1), generated_at="2026-09-13")  # week 2, same seed
+
+        name = history.weeks[0]["days"][0]["blocks"][0]["exercises"][0]["name"]
+        history.update_day_log(1, 0, exercise_logs={(0, 0): {"weight": "15"}})
+
+        # week 2 may not re-pick this exercise into the exact same (day, block, exercise)
+        # slot -- find wherever it actually landed, the same way test_last_log_prefers_the_most_recent_week does.
+        found_in_week_2 = False
+        for di, day in enumerate(history.weeks[1]["days"]):
+            for bi, block in enumerate(day["blocks"]):
+                for ei, exercise in enumerate(block["exercises"]):
+                    if exercise["name"] == name:
+                        history.update_day_log(2, di, exercise_logs={(bi, ei): {"weight": "25"}})
+                        found_in_week_2 = True
+
+        if not found_in_week_2:
+            self.assertEqual(history.best_weight(name), 15.0)
+            return
+
+        self.assertEqual(history.best_weight(name), 25.0)
+
+        # a later, lower weight never lowers the recorded best
+        history.update_day_log(2, di, exercise_logs={(bi, ei): {"weight": "10"}})
+        self.assertEqual(history.best_weight(name), 25.0)
 
     def test_rate_week_sets_and_clears_rating(self):
         history = History()
@@ -630,6 +722,157 @@ class UserPathsTests(unittest.TestCase):
             user_paths.user_history_path("dad", data_root=root),
             user_paths.user_history_path("mom", data_root=root),
         )
+
+    def test_user_presets_path_is_namespaced_by_username(self):
+        path = user_paths.user_presets_path("Dad", data_root=Path("/tmp/data"))
+        self.assertEqual(path, Path("/tmp/data/users/dad/presets.json"))
+
+
+class ExclusionPresetsTests(unittest.TestCase):
+    def test_list_presets_is_empty_before_any_are_saved(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            self.assertEqual(presets_module.list_presets(path), [])
+
+    def test_save_preset_persists_name_and_patterns(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore shoulder", ["push_vertical", "pull_vertical"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["name"], "Sore shoulder")
+            self.assertEqual(saved[0]["patterns"], ["pull_vertical", "push_vertical"])
+
+    def test_save_preset_drops_unknown_pattern_keys(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Bad input", ["push_vertical", "not_a_real_pattern"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(saved[0]["patterns"], ["push_vertical"])
+
+    def test_save_preset_rejects_a_blank_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            with self.assertRaises(ValueError):
+                presets_module.save_preset("   ", ["push_vertical"], path)
+
+    def test_save_preset_overwrites_an_existing_name_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore Shoulder", ["push_vertical"], path)
+            presets_module.save_preset("sore shoulder", ["pull_vertical"], path)
+
+            saved = presets_module.list_presets(path)
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["patterns"], ["pull_vertical"])
+
+    def test_list_presets_is_sorted_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Zzz", ["push_vertical"], path)
+            presets_module.save_preset("Aaa", ["pull_vertical"], path)
+
+            names = [p["name"] for p in presets_module.list_presets(path)]
+            self.assertEqual(names, ["Aaa", "Zzz"])
+
+    def test_delete_preset_removes_it_and_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore shoulder", ["push_vertical"], path)
+
+            self.assertTrue(presets_module.delete_preset("Sore shoulder", path))
+            self.assertEqual(presets_module.list_presets(path), [])
+
+    def test_delete_preset_is_case_insensitive(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            presets_module.save_preset("Sore Shoulder", ["push_vertical"], path)
+
+            self.assertTrue(presets_module.delete_preset("sore shoulder", path))
+
+    def test_delete_preset_returns_false_for_an_unknown_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "presets.json"
+            self.assertFalse(presets_module.delete_preset("Never saved", path))
+
+
+class FamilyTests(unittest.TestCase):
+    def test_household_rows_is_empty_before_any_accounts_exist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+            self.assertEqual(family_module.household_rows(users_path, data_root), [])
+
+    def test_household_rows_one_row_per_account_before_any_logging(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            rows = family_module.household_rows(users_path, data_root)
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual(row["completed_this_week"], 0)
+                self.assertEqual(row["current_streak"], 0)
+                self.assertEqual(row["longest_streak"], 0)
+                self.assertEqual(row["total_active_days"], 0)
+
+    def test_household_rows_reflects_each_accounts_own_completions(self):
+        # 2026-09-20 is a Sunday -- its week runs Mon 09-14 through Sun 09-20.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            dad_history_path = user_paths.user_history_path("dad", data_root)
+            mom_history_path = user_paths.user_history_path("mom", data_root)
+
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=dad_history_path, output_dir=tmp_path / "dad_output", seed=1,
+            )
+            generate_module.log_day(week["week_index"], 0, history_path=dad_history_path, completed=True)
+            history = History.load(dad_history_path)
+            history.weeks[0]["days"][0]["completed_at"] = "2026-09-18"
+            history.save(dad_history_path)
+
+            generate_module.generate_week(
+                4, history_path=mom_history_path, output_dir=tmp_path / "mom_output", seed=2,
+            )  # mom has a week scheduled but hasn't logged anything
+
+            rows = family_module.household_rows(users_path, data_root, today=date(2026, 9, 20))
+            by_name = {r["display_name"]: r for r in rows}
+            self.assertEqual(by_name["Dad"]["completed_this_week"], 1)
+            self.assertEqual(by_name["Dad"]["total_active_days"], 1)
+            self.assertEqual(by_name["Mom"]["completed_this_week"], 0)
+            self.assertEqual(by_name["Mom"]["total_active_days"], 0)
+
+    def test_household_rows_is_sorted_by_this_weeks_completions_then_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("zzz", "pw", "Zzz", path=users_path)
+            users.add_user("aaa", "pw", "Aaa", path=users_path)
+            users.add_user("busy", "pw", "Busy", path=users_path)
+
+            busy_history_path = user_paths.user_history_path("busy", data_root)
+            week, _md, _out = generate_module.generate_week(
+                4, history_path=busy_history_path, output_dir=tmp_path / "busy_output", seed=3,
+            )
+            generate_module.log_day(week["week_index"], 0, history_path=busy_history_path, completed=True)
+            history = History.load(busy_history_path)
+            history.weeks[0]["days"][0]["completed_at"] = "2026-09-18"
+            history.save(busy_history_path)
+
+            rows = family_module.household_rows(users_path, data_root, today=date(2026, 9, 20))
+            names = [r["display_name"] for r in rows]
+            # Busy (1 completion this week) sorts first; Aaa/Zzz (0 each) sort alphabetically after
+            self.assertEqual(names, ["Busy", "Aaa", "Zzz"])
 
 
 class MigrateTests(unittest.TestCase):
@@ -1468,7 +1711,9 @@ class CopyWeekTests(unittest.TestCase):
             generate_module.log_day(
                 week["week_index"], 0, history_path=source_path,
                 completed=True, notes="crushed it",
-                exercise_logs={(1, 0): {"actual": "25 lb x10", "feel": "easy", "load_hint": "1x DB, 25 lb"}},
+                exercise_logs={
+                    (1, 0): {"actual": "25 lb x10", "feel": "easy", "weight": "25", "load_hint": "1x DB, 25 lb"},
+                },
             )
 
             copied_week, _md, _out = generate_module.copy_week(
@@ -1483,6 +1728,7 @@ class CopyWeekTests(unittest.TestCase):
             copied_exercise = copied_day["blocks"][1]["exercises"][0]
             self.assertEqual(copied_exercise["actual"], "")
             self.assertEqual(copied_exercise["feel"], "")
+            self.assertEqual(copied_exercise["weight"], "")
             self.assertEqual(copied_exercise["load_hint"], "1x DB, 25 lb")  # carried over
 
     def test_copy_week_does_not_mutate_the_source_weeks_logs(self):
@@ -1584,7 +1830,9 @@ class ExportTests(unittest.TestCase):
         history.rate_week(1, 5)
         history.update_day_log(
             1, 0, completed=True, notes="good one",
-            exercise_logs={(1, 0): {"actual": "20 lb x10", "feel": "easy", "load_hint": "1x DB, 20 lb"}},
+            exercise_logs={
+                (1, 0): {"actual": "20 lb x10", "feel": "easy", "weight": "20", "load_hint": "1x DB, 20 lb"},
+            },
         )
 
         rows = export_module.history_rows(history)
@@ -1598,6 +1846,7 @@ class ExportTests(unittest.TestCase):
         logged_row = next(r for r in day1_rows if r["load_hint"] == "1x DB, 20 lb")
         self.assertEqual(logged_row["actual"], "20 lb x10")
         self.assertEqual(logged_row["feel"], "easy")
+        self.assertEqual(logged_row["weight"], "20")
 
     def test_history_rows_unrated_and_normal_week_defaults(self):
         history = History()
@@ -2111,6 +2360,34 @@ class CliTests(unittest.TestCase):
             self.assertIn("Pull:", output)
             self.assertIn("Boxing Bag", output)
             self.assertIn("(every day)", output)
+
+    def test_family_subcommand_reports_no_accounts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            users_path = Path(tmp_dir) / "users.json"
+            data_root = Path(tmp_dir) / "data"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["family", "--users-file", str(users_path), "--data-dir", str(data_root)])
+            self.assertEqual(rc, 0)
+            self.assertIn("No accounts yet", stdout.getvalue())
+
+    def test_family_subcommand_lists_every_account(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            users_path = tmp_path / "users.json"
+            data_root = tmp_path / "data"
+            users.add_user("dad", "pw", "Dad", path=users_path)
+            users.add_user("mom", "pw", "Mom", path=users_path)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli_main(["family", "--users-file", str(users_path), "--data-dir", str(data_root)])
+            self.assertEqual(rc, 0)
+            output = stdout.getvalue()
+            self.assertIn("Dad", output)
+            self.assertIn("Mom", output)
+            self.assertIn("This week", output)
 
     def test_backups_subcommand_reports_none_then_lists_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

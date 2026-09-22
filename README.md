@@ -62,6 +62,8 @@ python main.py log --week 3 --day 2 --incomplete                      # undo tha
 
 python main.py balance                  # movement-pattern usage counts, lifetime (ASCII bars)
 
+python main.py family                   # household summary: every account's this-week completions/streaks
+
 # --user picks whose history.json/output to use (see "Web interface" below) --
 # every subcommand above accepts it; omit it to use the shared default path
 python main.py generate --user dad
@@ -97,6 +99,17 @@ A always needs a Squat and a Horizontal Push pick) — if excluding a whole
 pattern can't be fully honored for that reason, you'll get a warning listing
 which exercises had to be included anyway, rather than a silent no-op.
 
+If the same set of patterns gets benched over and over (a standing shoulder
+issue, a leg day you're skipping this cycle), the **Presets** page lets you
+save it under a name once -- check the patterns, type a name, Save Preset --
+and every "Exclude movement patterns" section afterward (Dashboard,
+regenerate, week page) gets an "Apply a saved preset" dropdown that
+pre-checks the same boxes for you, no retyping. It's purely a shortcut for
+filling in the checkboxes: picking a preset doesn't change what gets
+submitted or how exclusion is enforced, and presets are per-account like
+everything else. Delete a preset from the same page when it's no longer
+needed.
+
 Every 6th week (`week_index % 6 == 0`) is automatically built as a lighter
 **deload/recovery week**: 3 rounds instead of 4-5 for supersets, 2 rounds for
 the core finisher, a 1-minute buy-out instead of 2, a 3-rep drop set
@@ -115,7 +128,7 @@ history into `<target>`'s, landing as a brand-new week at the end of
 `<target>`'s own sequence (their own next week number, not necessarily
 `N`). It's for e.g. a spouse who wants to do the same exercises without
 generating their own random pick: completion, notes, and any logged
-actual/feel reset (it's a fresh plan for them), but each exercise's
+actual/feel/weight reset (it's a fresh plan for them), but each exercise's
 prescribed load carries over as-is, ready for them to retarget in the web
 UI. The copy is a fully independent snapshot from that moment -- editing
 either person's copy afterward, including its `load_hint`, never touches
@@ -139,7 +152,7 @@ anyone else's account.
 person's whole history into CSV, one row per exercise instance across
 every generated week -- week number/date/deload flag/rating, day
 number/title/completion/notes, block title/type/structure, and the
-exercise's own name/prescribed load/actual/feel -- for opening in a
+exercise's own name/prescribed load/weight/actual/feel -- for opening in a
 spreadsheet or charting elsewhere. Read-only: it never changes
 history.json. The web UI has the same export as a link on the History page.
 
@@ -230,20 +243,39 @@ the login), and `--migrate-legacy-data <name>` (see "Upgrading from a
 single shared login" below). The login page shows a dropdown of every
 account by display name -- pick yourself and enter your password.
 
+Once you're logged in, the nav bar's account name (top right) becomes a
+**switch account** dropdown whenever more than one account exists -- pick
+someone else there and you're instantly acting as them, no password asked.
+It's meant for a household working out together on one shared device: the
+first person logs in for real, then everyone else's exercise completions
+get logged by switching to them from the dropdown between sets, rather than
+signing each person in and out. Nothing about the accounts themselves
+changes -- each one's history, streaks, and presets stay completely
+separate either way, this just skips re-entering a password to act as
+someone else *on a device you're all already sharing*. If that trade-off
+doesn't fit how you use it (e.g. the device isn't only ever used by people
+in the household), stick to logging out and back in instead.
+
 Pages: **Dashboard** (generate a new week, shows the latest one, with
 Regenerate/Delete/Print buttons), **History** (every past week, with a View
 link and a Delete button per row, a link into each week's own page which
 also has Regenerate/Delete/Print, and an Export as CSV link), **Glossary**
 (every exercise in the pool, grouped by movement pattern, with a short
 how-to, equipment, and load hint for each, plus a live search box that
-filters by name/equipment/description as you type, and how often/recently
-each has been used), and **Balance** (a bar per movement pattern showing
+filters by name/equipment/description as you type, how often/recently
+each has been used, and a "PR: N lb" tag once you've logged a weight for
+it), and **Balance** (a bar per movement pattern showing
 how many times it's appeared across every week you've generated, lifetime,
 plus a Push-vs-Pull total -- patterns that show up in every training day
 regardless of which templates get picked, like the core finisher and the
 bag round, are tagged "every day" so their bar isn't misread as a rotation
 choice; CLI parity: `python main.py balance`, the same counts as ASCII
-bars). Print
+bars), **Family** (every account's this-week completed-day count and
+current/longest streak, side by side, sorted busiest-first -- so anyone
+sharing the install can see how everyone's doing without logging in as
+them; your own row is tagged "You". CLI parity: `python main.py family`,
+the same numbers as a plain table), and **Presets** (create/delete named
+movement-pattern exclusion presets -- see above). Print
 uses the browser's own print dialog (Print This Week -> Ctrl/Cmd+P): a print
 stylesheet hides the nav, buttons, and generate form so only that week's
 days and blocks end up on paper. The generate and regenerate forms have a
@@ -260,12 +292,20 @@ Every day on the Dashboard/week page also has a log form right under it:
 a "Mark this day complete" checkbox, an editable prescribed-load field per
 exercise (click the load text next to its name, e.g. "2x DB, 15-25 lb
 each", and type -- see `copy`/load_hint above for why this is safe to
-change), a free-text "what did you actually do" + a quick "too easy / just
-right / too hard" pick per exercise, and a notes field -- "Save Log"
-persists it all to that day's entry in your account's own `history.json`
-(also picked up by `python main.py list --user <name>`/`backups`, and
-backed up like everything else). A completed day gets a badge next to its
-title.
+change), a numeric weight field, a free-text reps/notes field + a quick
+"too easy / just right / too hard" pick per exercise, and a day-level notes
+field -- "Save Log" persists it all to that day's entry in your account's
+own `history.json` (also picked up by `python main.py list --user
+<name>`/`backups`, and backed up like everything else). A completed day
+gets a badge next to its title.
+
+The weight field is kept separate from the free-text reps/notes field
+specifically so PRs can be tracked reliably -- a number typed there is
+compared against the heaviest weight you've ever logged for that exercise,
+across every week, and a new high gets a "New PR: <exercise> at N lb!"
+flash on save. It's optional and per-exercise: leave it blank and nothing
+changes. The current best for each exercise also shows up as a "PR: N lb"
+tag on its Glossary entry.
 
 The first time you mark a day complete, it's stamped with today's date --
 once there's at least one, the Dashboard shows a small streak panel above

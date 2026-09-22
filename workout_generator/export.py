@@ -10,7 +10,7 @@ CSV_FIELDNAMES = [
     "week_index", "generated_at", "deload", "week_rating",
     "day_number", "day_title", "day_completed", "day_completed_at", "day_notes",
     "block_title", "block_type", "block_structure",
-    "exercise_name", "load_hint", "actual", "feel",
+    "exercise_name", "load_hint", "weight", "actual", "feel",
 ]
 
 
@@ -37,6 +37,7 @@ def history_rows(history) -> list:
                         "block_structure": block["structure"],
                         "exercise_name": exercise["name"],
                         "load_hint": exercise.get("load_hint", ""),
+                        "weight": exercise.get("weight", ""),
                         "actual": exercise.get("actual", ""),
                         "feel": exercise.get("feel", ""),
                     })

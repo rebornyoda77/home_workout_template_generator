@@ -78,6 +78,63 @@ class WebServerTests(unittest.TestCase):
         dashboard = self._login()
         self.assertIn(b'<span class="current-user">Test User</span>', dashboard.data)
 
+    def test_nav_shows_a_switch_account_dropdown_once_other_accounts_exist(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        self.assertIn(b'class="switch-account-select"', dashboard.data)
+        self.assertIn(b'<option value="testuser" selected>Test User</option>', dashboard.data)
+        self.assertIn(b'<option value="otheruser">Other User</option>', dashboard.data)
+        # the plain, non-interactive span is only for the solo-account case
+        self.assertNotIn(b'<span class="current-user">Test User</span>', dashboard.data)
+
+    def test_switch_account_requires_valid_csrf_token(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._login()
+        response = self.client.post("/switch-account", data={"csrf_token": "bogus", "username": "otheruser"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_switch_account_switches_session_without_a_password(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "otheruser"}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Switched to Other User", response.data)
+        self.assertIn(b'<option value="otheruser" selected>Other User</option>', response.data)
+
+    def test_switch_account_to_an_unknown_username_flashes_and_does_not_switch(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "ghost"}, follow_redirects=True,
+        )
+        self.assertIn(b"Pick a valid account", response.data)
+        self.assertIn(b'<option value="testuser" selected>Test User</option>', response.data)
+
+    def test_switch_account_then_actions_affect_the_new_accounts_own_history(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "otheruser"}, follow_redirects=True,
+        )
+
+        after_switch = self.client.get("/")
+        csrf2 = self._csrf_from(after_switch)
+        self.client.post(
+            "/generate", data={"days": "3", "csrf_token": csrf2}, follow_redirects=True,
+        )
+
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        other_history = History.load(user_paths.user_history_path("otheruser", self.data_root))
+        self.assertEqual(len(testuser_history.weeks), 0)
+        self.assertEqual(len(other_history.weeks), 1)
+
     def test_removed_user_session_is_invalidated(self):
         self._login()
         users.remove_user("testuser", path=self.users_path)
@@ -432,6 +489,23 @@ class WebServerTests(unittest.TestCase):
         # template) may still show "Never used" for at least one exercise
         self.assertIn(b"Never used", response.data)
 
+    def test_glossary_shows_pr_tag_after_logging_a_weight(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "weight_b1_e0": "20"}, follow_redirects=True,
+        )
+
+        response = self.client.get("/glossary")
+        self.assertIn(b'class="tag tag-pr"', response.data)
+        self.assertIn(b"PR: 20 lb", response.data)
+
+    def test_glossary_omits_pr_tag_when_never_logged(self):
+        self._generate_week()
+        response = self.client.get("/glossary")
+        self.assertNotIn(b'class="tag tag-pr"', response.data)
+        self.assertNotIn(b"PR:", response.data)
+
     def test_balance_requires_login(self):
         response = self.client.get("/balance")
         self.assertEqual(response.status_code, 302)
@@ -462,10 +536,140 @@ class WebServerTests(unittest.TestCase):
         response = self.client.get("/balance")
         self.assertIn(b"No weeks generated yet", response.data)
 
+    def test_family_requires_login(self):
+        response = self.client.get("/family")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_family_lists_every_account_and_tags_the_current_one(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._login()
+
+        response = self.client.get("/family")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Test User", response.data)
+        self.assertIn(b"Other User", response.data)
+        # only the logged-in account gets the "You" tag
+        self.assertIn(b'Test User <span class="tag">You</span>', response.data)
+        self.assertNotIn(b'Other User <span class="tag">You</span>', response.data)
+
+    def test_family_shows_this_weeks_completions_for_every_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "completed": "on"}, follow_redirects=True,
+        )
+
+        response = self.client.get("/family")
+        self.assertIn(b"1 day", response.data)  # testuser's own completed day this week
+        self.assertIn(b"0 day", response.data)  # otheruser has none
+
     def test_dashboard_and_week_forms_offer_pattern_exclusion_checkboxes(self):
         dashboard = self._login()
         self.assertIn(b'name="exclude_patterns"', dashboard.data)
         self.assertIn(b"Boxing Bag", dashboard.data)  # a pattern label, from PATTERN_LABELS
+
+    def test_presets_requires_login(self):
+        response = self.client.get("/presets")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_presets_shows_empty_state_before_any_are_saved(self):
+        self._login()
+        response = self.client.get("/presets")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_save_preset_requires_valid_csrf_token(self):
+        self._login()
+        response = self.client.post(
+            "/presets", data={"csrf_token": "bogus", "preset_name": "Sore shoulder"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_save_preset_then_it_appears_in_the_list(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Sore shoulder", response.data)
+        self.assertIn(b"Vertical Push", response.data)
+
+    def test_save_preset_with_a_blank_name_flashes_and_does_not_save(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "  ", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+        self.assertIn(b"name", response.data.lower())
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_delete_preset_removes_it(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        presets_page = self.client.get("/presets")
+        csrf2 = self._csrf_from(presets_page)
+        response = self.client.post(
+            "/presets/Sore shoulder/delete", data={"csrf_token": csrf2}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No presets saved yet", response.data)
+
+    def test_delete_unknown_preset_flashes_message(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        response = self.client.post(
+            "/presets/Never saved/delete", data={"csrf_token": csrf}, follow_redirects=True,
+        )
+        self.assertIn(b"doesn&#39;t exist", response.data)
+
+    def test_presets_are_scoped_to_the_logged_in_account(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        self.client.get("/logout")
+        self._login("otheruser", "other-pass")
+        response = self.client.get("/presets")
+        self.assertIn(b"No presets saved yet", response.data)
+        self.assertNotIn(b"<td>Sore shoulder</td>", response.data)
+
+    def test_dashboard_and_week_forms_offer_a_saved_preset_dropdown_once_one_exists(self):
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/presets",
+            data={"csrf_token": csrf, "preset_name": "Sore shoulder", "exclude_patterns": ["push_vertical"]},
+            follow_redirects=True,
+        )
+
+        dashboard2 = self.client.get("/")
+        self.assertIn(b"preset-apply-select", dashboard2.data)
+        self.assertIn(b"Sore shoulder", dashboard2.data)
+
+        week_response = self._generate_week()
+        self.assertIn(b"preset-apply-select", week_response.data)
 
     def test_dashboard_and_week_forms_offer_a_deload_override_select(self):
         dashboard = self._login()
@@ -530,8 +734,10 @@ class WebServerTests(unittest.TestCase):
         self.assertIn(b'name="actual_b1_e0"', week_response.data)
         self.assertIn(b'name="feel_b1_e0"', week_response.data)
         self.assertIn(b'name="load_b1_e0"', week_response.data)
+        self.assertIn(b'name="weight_b1_e0"', week_response.data)
         self.assertNotIn(b'name="actual_b0_e0"', week_response.data)
         self.assertNotIn(b'name="load_b0_e0"', week_response.data)
+        self.assertNotIn(b'name="weight_b0_e0"', week_response.data)
 
     def test_week_page_shows_warmup_and_cooldown_with_a_timer_but_no_log_fields(self):
         week_response = self._generate_week()
@@ -589,6 +795,52 @@ class WebServerTests(unittest.TestCase):
         history = History.load(user_paths.user_history_path("testuser", self.data_root))
         exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
         self.assertEqual(exercise["load_hint"], "1x DB, 10 lb -- comfortable for me")
+
+    def test_log_day_saves_weight_and_flashes_new_pr(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "weight_b1_e0": "20"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"New PR", response.data)
+        self.assertIn(b"20", response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["weight"], "20")
+
+    def test_log_day_does_not_flash_new_pr_for_an_equal_or_lower_weight(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+        self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf, "weight_b1_e0": "20"}, follow_redirects=True,
+        )
+
+        week_response2 = self.client.get("/week/1")
+        csrf2 = self._csrf_from(week_response2)
+        response = self.client.post(
+            "/week/1/day/0/log", data={"csrf_token": csrf2, "weight_b1_e0": "15"}, follow_redirects=True,
+        )
+        self.assertNotIn(b"New PR", response.data)
+
+    def test_log_day_ignores_a_non_numeric_weight_for_pr_tracking(self):
+        week_response = self._generate_week()
+        csrf = self._csrf_from(week_response)
+
+        response = self.client.post(
+            "/week/1/day/0/log",
+            data={"csrf_token": csrf, "weight_b1_e0": "heavy"},
+            follow_redirects=True,
+        )
+        self.assertNotIn(b"New PR", response.data)
+
+        history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        exercise = history.week_by_index(1)["days"][0]["blocks"][1]["exercises"][0]
+        self.assertEqual(exercise["weight"], "heavy")
 
     def test_log_day_unchecked_completed_box_clears_it(self):
         week_response = self._generate_week()

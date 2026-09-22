@@ -128,9 +128,36 @@ boot, which their own installers already set up), you don't need to redo
 steps 6-8 after a reboot -- only the app's own systemd service needed that
 explicit `enable`.
 
+**Handy aliases**, once the service exists, so you don't have to retype the
+full `systemctl`/`journalctl` invocations every time you tweak something:
+```bash
+cat >> ~/.bashrc <<'EOF'
+alias restart_home_workout_web='sudo systemctl restart home-workout-web'
+alias home_workout_status='sudo systemctl status home-workout-web'
+alias home_workout_logs='sudo journalctl -u home-workout-web -f'
+EOF
+source ~/.bashrc
+```
+(If you use `zsh` instead, append to `~/.zshrc` instead of `~/.bashrc`.) An
+alias still prompts for your sudo password each time; if you'd rather it
+didn't, allow just the restart command without one:
+```
+echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart home-workout-web" | sudo tee /etc/sudoers.d/home-workout-web
+```
+
 **Keep the app's own login even with Tailscale.** Tailscale's network-level
 access control is strong, but anyone who can reach any device already on
 your tailnet (or whose Tailscale account is compromised) could otherwise
 reach the app -- separate accounts and passwords are a second, independent
 layer worth keeping, on top of also keeping everyone's workout history
 separate from each other.
+
+Note that this second layer is per-*session*, not per-*request*: once
+someone is logged in, the nav bar's switch-account dropdown (see the
+README's "Web interface" section) lets them act as any other account on
+that same device with no further password -- deliberately, for a household
+logging each other's sets on one shared screen. That's a fine trade-off on
+a device only your household ever touches; it's not if the device (or the
+browser session on it) might be reachable by someone outside it, in which
+case log everyone out (or don't leave a session signed in) when you're
+done rather than relying on the per-account password alone.
