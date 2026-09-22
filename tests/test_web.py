@@ -78,6 +78,63 @@ class WebServerTests(unittest.TestCase):
         dashboard = self._login()
         self.assertIn(b'<span class="current-user">Test User</span>', dashboard.data)
 
+    def test_nav_shows_a_switch_account_dropdown_once_other_accounts_exist(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        self.assertIn(b'class="switch-account-select"', dashboard.data)
+        self.assertIn(b'<option value="testuser" selected>Test User</option>', dashboard.data)
+        self.assertIn(b'<option value="otheruser">Other User</option>', dashboard.data)
+        # the plain, non-interactive span is only for the solo-account case
+        self.assertNotIn(b'<span class="current-user">Test User</span>', dashboard.data)
+
+    def test_switch_account_requires_valid_csrf_token(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        self._login()
+        response = self.client.post("/switch-account", data={"csrf_token": "bogus", "username": "otheruser"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_switch_account_switches_session_without_a_password(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "otheruser"}, follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Switched to Other User", response.data)
+        self.assertIn(b'<option value="otheruser" selected>Other User</option>', response.data)
+
+    def test_switch_account_to_an_unknown_username_flashes_and_does_not_switch(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+
+        response = self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "ghost"}, follow_redirects=True,
+        )
+        self.assertIn(b"Pick a valid account", response.data)
+        self.assertIn(b'<option value="testuser" selected>Test User</option>', response.data)
+
+    def test_switch_account_then_actions_affect_the_new_accounts_own_history(self):
+        users.add_user("otheruser", "other-pass", "Other User", path=self.users_path)
+        dashboard = self._login()
+        csrf = self._csrf_from(dashboard)
+        self.client.post(
+            "/switch-account", data={"csrf_token": csrf, "username": "otheruser"}, follow_redirects=True,
+        )
+
+        after_switch = self.client.get("/")
+        csrf2 = self._csrf_from(after_switch)
+        self.client.post(
+            "/generate", data={"days": "3", "csrf_token": csrf2}, follow_redirects=True,
+        )
+
+        testuser_history = History.load(user_paths.user_history_path("testuser", self.data_root))
+        other_history = History.load(user_paths.user_history_path("otheruser", self.data_root))
+        self.assertEqual(len(testuser_history.weeks), 0)
+        self.assertEqual(len(other_history.weeks), 1)
+
     def test_removed_user_session_is_invalidated(self):
         self._login()
         users.remove_user("testuser", path=self.users_path)

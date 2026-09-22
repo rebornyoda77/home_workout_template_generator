@@ -38,6 +38,19 @@ def _new_csrf_token() -> str:
     return token
 
 
+def _ensure_csrf_token() -> str:
+    """Like _new_csrf_token, but reuses whatever token is already in the
+    session instead of always rotating it. The nav's account-switcher form
+    renders on every page via the context processor below, so it must never
+    invalidate a token a route's own view function already minted (via
+    _new_csrf_token) for that same page's other forms."""
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_hex(16)
+        session["csrf_token"] = token
+    return token
+
+
 def _check_csrf(form) -> bool:
     token = session.get("csrf_token")
     submitted = form.get("csrf_token")
@@ -111,12 +124,20 @@ def create_app(
     def _presets_path() -> Path:
         return user_presets_path(session["username"], app.config["DATA_ROOT"])
 
+    def _other_accounts() -> list:
+        return [a for a in users.list_users(app.config["USERS_PATH"]) if a["username"] != session["username"]]
+
     @app.context_processor
     def _inject_template_globals():
         context = {"deload_interval": DELOAD_INTERVAL_WEEKS}
         username = session.get("username")
         if username:
             context["current_display_name"] = users.display_name_for(username, app.config["USERS_PATH"])
+            # Powers the nav's "switch account" dropdown (see switch_account
+            # below) -- shown on every page, so it's injected here rather
+            # than threaded through each route's own render_template call.
+            context["nav_accounts"] = _other_accounts()
+            context["nav_csrf_token"] = _ensure_csrf_token()
         return context
 
     @app.before_request
@@ -149,6 +170,27 @@ def create_app(
     def logout():
         session.pop("username", None)
         return redirect(url_for("login"))
+
+    @app.route("/switch-account", methods=["POST"])
+    def switch_account():
+        """Swaps which account this session is acting as, without a
+        password -- for a household working out together on one shared
+        device/login, where re-authenticating per person to log each of
+        their completions would be the whole point of friction this avoids.
+        Each account's own history/output/presets stay completely separate
+        either way (see _history_path/_output_dir/_presets_path above);
+        this only changes whose data the *next* request reads and writes."""
+        if not _check_csrf(request.form):
+            return "Your session expired -- go back and try again.", 400
+
+        target = users.normalize_username(request.form.get("username", ""))
+        if not target or not users.user_exists(target, app.config["USERS_PATH"]):
+            flash("Pick a valid account to switch to.")
+            return redirect(url_for("dashboard"))
+
+        session["username"] = target
+        flash(f"Switched to {users.display_name_for(target, app.config['USERS_PATH'])}.")
+        return redirect(url_for("dashboard"))
 
     @app.route("/")
     def dashboard():
@@ -202,14 +244,11 @@ def create_app(
         entry = history.week_by_index(week_index)
         if entry is None:
             return "That week hasn't been generated.", 404
-        other_accounts = [
-            a for a in users.list_users(app.config["USERS_PATH"]) if a["username"] != session["username"]
-        ]
         return render_template(
             "week.html", active_page="weeks", week=entry,
             suggestions=_exercise_suggestions(history, entry),
             pattern_options=_pattern_options(), csrf_token=_new_csrf_token(),
-            other_accounts=other_accounts, presets=list_presets(_presets_path()),
+            other_accounts=_other_accounts(), presets=list_presets(_presets_path()),
         )
 
     @app.route("/week/<int:week_index>/delete", methods=["POST"])

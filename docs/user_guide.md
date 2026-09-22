@@ -151,3 +151,13 @@ your tailnet (or whose Tailscale account is compromised) could otherwise
 reach the app -- separate accounts and passwords are a second, independent
 layer worth keeping, on top of also keeping everyone's workout history
 separate from each other.
+
+Note that this second layer is per-*session*, not per-*request*: once
+someone is logged in, the nav bar's switch-account dropdown (see the
+README's "Web interface" section) lets them act as any other account on
+that same device with no further password -- deliberately, for a household
+logging each other's sets on one shared screen. That's a fine trade-off on
+a device only your household ever touches; it's not if the device (or the
+browser session on it) might be reachable by someone outside it, in which
+case log everyone out (or don't leave a session signed in) when you're
+done rather than relying on the per-account password alone.

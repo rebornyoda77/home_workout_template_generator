@@ -44,6 +44,12 @@
   nav a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   nav .spacer { flex: 1 1 auto; }
   .current-user { font-size: 12.5px; color: var(--text-muted); padding: 6px 8px; white-space: nowrap; }
+  .switch-account-form { display: inline-flex; align-items: center; margin: 0; }
+  .switch-account-select {
+    width: auto; margin: 0; padding: 6px 8px; font-size: 12.5px; font-weight: 500;
+    color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer;
+  }
+  .switch-account-select:hover, .switch-account-select:focus { color: var(--text); background: var(--bg); border-color: var(--border); box-shadow: none; }
   main.content-wrap { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; }
   .flash { background: var(--accent-soft); border: 1px solid var(--accent-soft-border); color: var(--accent-hover); border-radius: var(--radius-sm); padding: 10px 14px; margin: 0 0 20px; font-size: 13.5px; }
@@ -251,7 +257,19 @@
   <a href="{{ url_for('family_page') }}" class="{{ 'active' if active_page == 'family' else '' }}">Family</a>
   <a href="{{ url_for('presets_page') }}" class="{{ 'active' if active_page == 'presets' else '' }}">Presets</a>
   <span class="spacer"></span>
+  {% if nav_accounts %}
+  <form method="post" action="{{ url_for('switch_account') }}" class="switch-account-form">
+    <input type="hidden" name="csrf_token" value="{{ nav_csrf_token }}">
+    <select name="username" class="switch-account-select" onchange="this.form.submit()" aria-label="Switch account">
+      <option value="{{ session.username }}" selected>{{ current_display_name }}</option>
+      {% for a in nav_accounts %}
+      <option value="{{ a.username }}">{{ a.display_name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% else %}
   <span class="current-user">{{ current_display_name }}</span>
+  {% endif %}
   <a href="{{ url_for('logout') }}">Log out</a>
 </nav>
 </div>

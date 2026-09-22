@@ -243,6 +243,19 @@ the login), and `--migrate-legacy-data <name>` (see "Upgrading from a
 single shared login" below). The login page shows a dropdown of every
 account by display name -- pick yourself and enter your password.
 
+Once you're logged in, the nav bar's account name (top right) becomes a
+**switch account** dropdown whenever more than one account exists -- pick
+someone else there and you're instantly acting as them, no password asked.
+It's meant for a household working out together on one shared device: the
+first person logs in for real, then everyone else's exercise completions
+get logged by switching to them from the dropdown between sets, rather than
+signing each person in and out. Nothing about the accounts themselves
+changes -- each one's history, streaks, and presets stay completely
+separate either way, this just skips re-entering a password to act as
+someone else *on a device you're all already sharing*. If that trade-off
+doesn't fit how you use it (e.g. the device isn't only ever used by people
+in the household), stick to logging out and back in instead.
+
 Pages: **Dashboard** (generate a new week, shows the latest one, with
 Regenerate/Delete/Print buttons), **History** (every past week, with a View
 link and a Delete button per row, a link into each week's own page which
