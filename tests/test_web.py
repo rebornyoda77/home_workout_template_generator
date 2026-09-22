@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from workout_generator import blocks as blocks_module
 from workout_generator import export as export_module
@@ -504,6 +505,23 @@ class WebServerTests(unittest.TestCase):
         self._generate_week()
         response = self.client.get("/glossary")
         self.assertNotIn(b'class="tag tag-pr"', response.data)
+
+    def test_glossary_shows_no_diagrams_yet_by_default(self):
+        # static/diagrams/ ships with no exercise images yet (see its README) --
+        # this is the current, honest baseline until some get added.
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertNotIn(b'class="glossary-diagram"', response.data)
+
+    def test_glossary_shows_a_diagram_image_when_one_resolves(self):
+        self._login()
+        with patch(
+            "workout_generator.web_server.diagram_filename",
+            side_effect=lambda name: "goblet-squat.png" if name == "Goblet Squat" else "",
+        ):
+            response = self.client.get("/glossary")
+        self.assertIn(b'src="/static/diagrams/goblet-squat.png"', response.data)
+        self.assertIn(b'alt="Goblet Squat how-to diagram"', response.data)
         self.assertNotIn(b"PR:", response.data)
 
     def test_balance_requires_login(self):

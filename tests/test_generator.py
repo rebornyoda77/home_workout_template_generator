@@ -11,6 +11,7 @@ from pathlib import Path
 
 from workout_generator import blocks, exercises as ex_pool, migrate, progression, user_paths, users
 from workout_generator import cli as cli_module
+from workout_generator import diagrams as diagrams_module
 from workout_generator import exclusion_presets as presets_module
 from workout_generator import family as family_module
 from workout_generator import generate as generate_module
@@ -873,6 +874,42 @@ class FamilyTests(unittest.TestCase):
             names = [r["display_name"] for r in rows]
             # Busy (1 completion this week) sorts first; Aaa/Zzz (0 each) sort alphabetically after
             self.assertEqual(names, ["Busy", "Aaa", "Zzz"])
+
+
+class DiagramsTests(unittest.TestCase):
+    def test_diagram_slug_lowercases_and_hyphenates(self):
+        self.assertEqual(diagrams_module.diagram_slug("Goblet Squat"), "goblet-squat")
+
+    def test_diagram_slug_collapses_punctuation_and_strips_edges(self):
+        self.assertEqual(
+            diagrams_module.diagram_slug("Bench Bridge (Shoulders on Bench)"),
+            "bench-bridge-shoulders-on-bench",
+        )
+        self.assertEqual(diagrams_module.diagram_slug("Single-Arm High Row"), "single-arm-high-row")
+
+    def test_diagram_filename_is_empty_when_no_file_exists(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagrams_dir = Path(tmp_dir)
+            self.assertEqual(diagrams_module.diagram_filename("Goblet Squat", diagrams_dir), "")
+
+    def test_diagram_filename_finds_a_matching_png(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagrams_dir = Path(tmp_dir)
+            (diagrams_dir / "goblet-squat.png").write_bytes(b"fake png")
+            self.assertEqual(diagrams_module.diagram_filename("Goblet Squat", diagrams_dir), "goblet-squat.png")
+
+    def test_diagram_filename_prefers_svg_over_png(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagrams_dir = Path(tmp_dir)
+            (diagrams_dir / "goblet-squat.png").write_bytes(b"fake png")
+            (diagrams_dir / "goblet-squat.svg").write_text("<svg></svg>")
+            self.assertEqual(diagrams_module.diagram_filename("Goblet Squat", diagrams_dir), "goblet-squat.svg")
+
+    def test_diagram_filename_ignores_a_differently_named_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagrams_dir = Path(tmp_dir)
+            (diagrams_dir / "some-other-exercise.png").write_bytes(b"fake png")
+            self.assertEqual(diagrams_module.diagram_filename("Goblet Squat", diagrams_dir), "")
 
 
 class MigrateTests(unittest.TestCase):

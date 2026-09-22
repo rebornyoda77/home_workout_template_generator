@@ -129,6 +129,12 @@
   .glossary-item { padding: 12px 0; border-bottom: 1px dashed var(--border); }
   .glossary-item:last-child { border-bottom: none; }
   .glossary-item h3 { margin: 0 0 4px; }
+  .glossary-item-row { display: flex; gap: 14px; align-items: flex-start; }
+  .glossary-item-text { flex: 1 1 auto; min-width: 0; }
+  .glossary-diagram {
+    flex: 0 0 auto; width: 88px; height: 88px; object-fit: contain; padding: 4px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  }
   .glossary-description { margin: 0 0 8px; font-size: 13.5px; color: var(--text); line-height: 1.5; }
   .glossary-meta { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
   .tag {
