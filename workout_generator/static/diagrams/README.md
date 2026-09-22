@@ -1,8 +1,12 @@
 # Exercise diagrams
 
-This folder is where per-exercise how-to diagrams live. It's currently
-empty -- this is the scaffolding for adding them, not the diagrams
-themselves.
+This folder holds per-exercise how-to diagrams. About half the exercise
+pool has one so far (pulled from free-exercise-db -- see `CREDITS.md` for
+exactly which, and its source for each); the rest have no genuinely good
+match in that dataset (boxing combos, treadmill/agility drills, and a
+handful of custom combo movements) and are intentionally left without
+one rather than shown with a misleading image -- also listed in
+`CREDITS.md`, with why each was skipped.
 
 ## How it works
 
@@ -39,13 +43,17 @@ for e in sorted(ex_pool.EXERCISES, key=lambda e: e.name):
 
 ## Where to source images
 
-Not populated yet -- a few candidates worth checking when it's time to
-fill this in, roughly in order of how little friction they add to a
+Everything here so far came from free-exercise-db. For the exercises still
+without a diagram (see `CREDITS.md`'s skipped list), a few other candidates
+worth checking, roughly in order of how little friction they add to a
 self-hosted, offline-friendly setup like this one:
 
 - **[free-exercise-db](https://github.com/yuhonas/free-exercise-db)** --
   exercise data with step-by-step JPEG images, released to the public
   domain (Unlicense). No attribution required, easiest to just vendor in.
+  (Already used for everything currently in this folder -- worth a second
+  look for anything skipped for having no *good* match rather than no
+  match at all, in case a closer one turns up on a re-read.)
 - **[wger](https://wger.de/)** -- open-source workout manager with its own
   exercise database and a public API; images are CC-BY-SA 4.0, so using
   them means keeping attribution and the same license on redistribution.
@@ -59,9 +67,10 @@ self-hosted, offline-friendly setup like this one:
 
 Whatever the source, this project is for personal/household use, not
 redistribution -- but license terms (especially CC-BY-SA's attribution and
-share-alike requirements) still apply to what's kept here. If images come
-from a CC-BY-SA source, keep a note of which ones and their attribution
-somewhere in this folder (e.g. a `CREDITS.md` here) so it doesn't get lost.
+share-alike requirements) still apply to what's kept here. `CREDITS.md` in
+this folder tracks where every current image came from; if pulling from a
+CC-BY-SA source (or anything else that needs attribution), add entries
+there in the same style so it doesn't get lost.
 
 ## Sizing
 

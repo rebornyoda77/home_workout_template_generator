@@ -264,7 +264,11 @@ also has Regenerate/Delete/Print, and an Export as CSV link), **Glossary**
 how-to, equipment, and load hint for each, plus a live search box that
 filters by name/equipment/description as you type, how often/recently
 each has been used, and a "PR: N lb" tag once you've logged a weight for
-it -- and a diagram thumbnail next to any exercise that has one, see
+it -- and a diagram thumbnail next to any exercise that has one. About
+half the pool has one so far, sourced from the public-domain
+[free-exercise-db](https://github.com/yuhonas/free-exercise-db) wherever a
+genuinely good visual match exists for it -- see
+`workout_generator/static/diagrams/CREDITS.md` for the full mapping and
 `workout_generator/static/diagrams/README.md` for how to add more), and **Balance** (a bar per movement pattern showing
 how many times it's appeared across every week you've generated, lifetime,
 plus a Push-vs-Pull total -- patterns that show up in every training day
