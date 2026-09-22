@@ -131,9 +131,23 @@
   .glossary-item h3 { margin: 0 0 4px; }
   .glossary-item-row { display: flex; gap: 14px; align-items: flex-start; }
   .glossary-item-text { flex: 1 1 auto; min-width: 0; }
+  .glossary-diagram-wrap { position: relative; flex: 0 0 auto; display: block; width: 88px; height: 88px; }
   .glossary-diagram {
-    flex: 0 0 auto; width: 88px; height: 88px; object-fit: contain; padding: 4px;
+    display: block; width: 88px; height: 88px; object-fit: contain; padding: 4px;
     background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    cursor: zoom-in;
+  }
+  .glossary-diagram-zoom {
+    display: block; position: absolute; top: 0; left: 0; z-index: 20;
+    width: min(260px, 60vw); height: min(260px, 60vw); object-fit: contain; padding: 8px;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius);
+    box-shadow: var(--shadow); pointer-events: none;
+    opacity: 0; visibility: hidden; transform: scale(.96); transform-origin: top left;
+    transition: opacity .12s ease, transform .12s ease, visibility .12s;
+  }
+  .glossary-diagram-wrap:hover .glossary-diagram-zoom,
+  .glossary-diagram-wrap:focus-within .glossary-diagram-zoom {
+    opacity: 1; visibility: visible; transform: scale(1);
   }
   .glossary-description { margin: 0 0 8px; font-size: 13.5px; color: var(--text); line-height: 1.5; }
   .glossary-meta { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }

@@ -25,8 +25,12 @@
        data-search="{{ (exercise.name ~ ' ' ~ exercise.description ~ ' ' ~ (exercise.equipment | join(' ')) ~ ' ' ~ group.label ~ ' ' ~ exercise.note) | lower }}">
     <div class="glossary-item-row">
       {% if entry.diagram %}
-      <img class="glossary-diagram" src="{{ url_for('static', filename='diagrams/' ~ entry.diagram) }}"
-           alt="{{ exercise.name }} how-to diagram" loading="lazy">
+      {% set diagram_src = url_for('static', filename='diagrams/' ~ entry.diagram) %}
+      <span class="glossary-diagram-wrap">
+        <img class="glossary-diagram" src="{{ diagram_src }}" tabindex="0"
+             alt="{{ exercise.name }} how-to diagram" loading="lazy">
+        <img class="glossary-diagram-zoom" src="{{ diagram_src }}" alt="" aria-hidden="true">
+      </span>
       {% endif %}
       <div class="glossary-item-text">
         <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
