@@ -15,6 +15,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 from . import exercises as ex_pool
 from . import users
 from .balance import pattern_rows, push_pull_totals
+from .diagrams import diagram_filename
 from .exclusion_presets import delete_preset, list_presets, save_preset
 from .export import history_to_csv
 from .family import household_rows
@@ -476,6 +477,7 @@ def create_app(
                     "use_count": history.use_count.get(exercise.name, 0),
                     "suggestion": suggestion_for(history.last_log(exercise.name)),
                     "best_weight": history.best_weight(exercise.name),
+                    "diagram": diagram_filename(exercise.name),
                 }
                 for exercise in ex_pool.by_pattern(pattern)
             ]

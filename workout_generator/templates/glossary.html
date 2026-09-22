@@ -23,22 +23,30 @@
   {% set exercise = entry.exercise %}
   <div class="glossary-item"
        data-search="{{ (exercise.name ~ ' ' ~ exercise.description ~ ' ' ~ (exercise.equipment | join(' ')) ~ ' ' ~ group.label ~ ' ' ~ exercise.note) | lower }}">
-    <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
-    {% if exercise.description %}<p class="glossary-description">{{ exercise.description }}</p>{% endif %}
-    <p class="glossary-meta">
-      <span class="tag">{{ exercise.equipment | join(', ') | capitalize if exercise.equipment else 'Bodyweight' }}</span>
-      <span class="tag">{{ exercise.load_hint }}</span>
-      {% if exercise.note %}<span class="tag tag-note">{{ exercise.note }}</span>{% endif %}
-      {% if entry.use_count > 0 %}
-      <span class="tag tag-usage">Used {{ entry.use_count }}x — last Week {{ entry.last_used_week }}</span>
-      {% else %}
-      <span class="tag tag-usage">Never used</span>
+    <div class="glossary-item-row">
+      {% if entry.diagram %}
+      <img class="glossary-diagram" src="{{ url_for('static', filename='diagrams/' ~ entry.diagram) }}"
+           alt="{{ exercise.name }} how-to diagram" loading="lazy">
       {% endif %}
-      {% if entry.best_weight is not none %}
-      <span class="tag tag-pr">PR: {{ '%g' | format(entry.best_weight) }} lb</span>
-      {% endif %}
-    </p>
-    {% if entry.suggestion %}<p class="exercise-suggestion">{{ entry.suggestion }}</p>{% endif %}
+      <div class="glossary-item-text">
+        <h3>{{ exercise.name }}{{ ' (unilateral)' if exercise.unilateral else '' }}</h3>
+        {% if exercise.description %}<p class="glossary-description">{{ exercise.description }}</p>{% endif %}
+        <p class="glossary-meta">
+          <span class="tag">{{ exercise.equipment | join(', ') | capitalize if exercise.equipment else 'Bodyweight' }}</span>
+          <span class="tag">{{ exercise.load_hint }}</span>
+          {% if exercise.note %}<span class="tag tag-note">{{ exercise.note }}</span>{% endif %}
+          {% if entry.use_count > 0 %}
+          <span class="tag tag-usage">Used {{ entry.use_count }}x — last Week {{ entry.last_used_week }}</span>
+          {% else %}
+          <span class="tag tag-usage">Never used</span>
+          {% endif %}
+          {% if entry.best_weight is not none %}
+          <span class="tag tag-pr">PR: {{ '%g' | format(entry.best_weight) }} lb</span>
+          {% endif %}
+        </p>
+        {% if entry.suggestion %}<p class="exercise-suggestion">{{ entry.suggestion }}</p>{% endif %}
+      </div>
+    </div>
   </div>
   {% endfor %}
 </div>

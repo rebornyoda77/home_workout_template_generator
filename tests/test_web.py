@@ -3,8 +3,10 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from workout_generator import blocks as blocks_module
+from workout_generator import exercises as ex_pool
 from workout_generator import export as export_module
 from workout_generator import user_paths, users, web_server
 from workout_generator.history import DEFAULT_STALE_DAYS, History
@@ -504,6 +506,28 @@ class WebServerTests(unittest.TestCase):
         self._generate_week()
         response = self.client.get("/glossary")
         self.assertNotIn(b'class="tag tag-pr"', response.data)
+
+    def test_glossary_shows_diagrams_for_exercises_that_have_one_and_not_others(self):
+        # static/diagrams/ now ships with real images for some, but not all,
+        # exercises (see its CREDITS.md) -- both states should coexist.
+        self._login()
+        response = self.client.get("/glossary")
+        self.assertIn(b'class="glossary-diagram" src="/static/diagrams/goblet-squat.jpg"', response.data)
+
+        diagram_count = response.data.count(b'class="glossary-diagram"')
+        total_exercises = len(ex_pool.EXERCISES)
+        self.assertGreater(diagram_count, 0)
+        self.assertLess(diagram_count, total_exercises)
+
+    def test_glossary_shows_a_diagram_image_when_one_resolves(self):
+        self._login()
+        with patch(
+            "workout_generator.web_server.diagram_filename",
+            side_effect=lambda name: "goblet-squat.png" if name == "Goblet Squat" else "",
+        ):
+            response = self.client.get("/glossary")
+        self.assertIn(b'src="/static/diagrams/goblet-squat.png"', response.data)
+        self.assertIn(b'alt="Goblet Squat how-to diagram"', response.data)
         self.assertNotIn(b"PR:", response.data)
 
     def test_balance_requires_login(self):
